@@ -133,7 +133,7 @@ npm run dev
 
 You should see:
 ```
-🌿  Ease-On API Server
+Ease-On API Server
 HTTP:      http://localhost:3001
 Socket.IO: ws://localhost:3001
 ```

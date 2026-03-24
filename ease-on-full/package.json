@@ -1,0 +1,13 @@
+{
+  "name": "ease-on",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ease-On Community Wellness App — Frontend + Backend",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "npm run dev:backend & npm run dev:frontend",
+    "setup": "npm run install:all && cd backend && cp -n .env.example .env 2>/dev/null; echo '✅ Setup complete. Edit backend/.env with your DB credentials, then run: npm run dev'"
+  }
+}

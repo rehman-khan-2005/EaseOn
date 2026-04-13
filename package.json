@@ -1,0 +1,15 @@
+{
+  "name": "ease-on",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "deploy:frontend": "npm run build && firebase deploy --only hosting",
+    "deploy:backend": "firebase deploy --only functions",
+    "deploy:all": "npm run build && firebase deploy"
+  },
+  "dependencies": {
+    "firebase": "^12.12.0"
+  }
+}

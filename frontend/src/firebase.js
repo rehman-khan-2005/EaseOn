@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from "firebase/auth";
+import { getAuth, initializeAuth, browserLocalPersistence, indexedDBLocalPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from "firebase/auth";
 
 const firebaseConfig = {
   // This will be filled in during setup — see README Step 2
@@ -12,27 +12,26 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+
+// Use browserLocalPersistence for Capacitor (iOS WKWebView can't use indexedDB reliably)
+let auth;
+const isCapacitor = typeof window !== "undefined" && window.Capacitor;
+try {
+  if (isCapacitor) {
+    auth = initializeAuth(app, { persistence: browserLocalPersistence });
+  } else {
+    auth = getAuth(app);
+  }
+} catch (e) {
+  // If already initialized, just get the existing instance
+  auth = getAuth(app);
+}
+
 const googleProvider = new GoogleAuthProvider();
 
-// FCM — only works in regular browsers, not Capacitor/native webviews
+// FCM — disabled on mobile, only used on web
 let messaging = null;
 let getFcmToken = null;
 let onMessage = null;
-
-const isNativeApp = typeof window !== "undefined" && (window.Capacitor || navigator.userAgent.includes("CapacitorHttp"));
-const hasServiceWorker = typeof window !== "undefined" && "serviceWorker" in navigator && "Notification" in window;
-
-// Lazy-load FCM for supported environments only
-const initFcm = async () => {
-  if (isNativeApp || !hasServiceWorker) return;
-  try {
-    const fcm = await import("firebase/messaging");
-    messaging = fcm.getMessaging(app);
-    getFcmToken = fcm.getToken;
-    onMessage = fcm.onMessage;
-  } catch (e) { console.log("FCM not available:", e.message); }
-};
-initFcm();
 
 export { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, googleProvider, signInWithPopup, sendPasswordResetEmail, messaging, getFcmToken, onMessage };

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import api from "./api";
-import { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, googleProvider, signInWithPopup, sendPasswordResetEmail, messaging, getFcmToken, onMessage } from "./firebase";
+import { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, googleProvider, signInWithPopup, sendPasswordResetEmail } from "./firebase";
 
 /* ═══════════════════════════════════════════════════════════════════
    EASE-ON — Community Wellness App
@@ -149,7 +149,11 @@ export default function EaseOn(){
 
   // ─── Firebase Auth listener ─────────────────────────────────────
   useEffect(()=>{
+    // Safety timeout — if onAuthStateChanged never fires (iOS WKWebView), show login after 5s
+    const timeout=setTimeout(()=>{if(!authChecked){setAuthChecked(true);console.log("Auth timeout — showing login")}},5000);
+
     const unsub=onAuthStateChanged(auth,async(firebaseUser)=>{
+      clearTimeout(timeout);
       if(firebaseUser){
         try{
           setDataLoading(true);
@@ -159,7 +163,6 @@ export default function EaseOn(){
           setScreen("home");setTab("home");
           await loadAllData();
           setDataLoading(false);
-          // Request push notification permission
           requestNotificationPermission();
         }catch(e){
           setDataLoading(false);
@@ -168,34 +171,34 @@ export default function EaseOn(){
       }
       setAuthChecked(true);
     });
-    return ()=>unsub();
+    return ()=>{clearTimeout(timeout);unsub()};
   },[]);
 
   // ─── FCM foreground message listener ────────────────────────────
-  useEffect(()=>{
-    if(!messaging||!onMessage)return;
-    try{
-      const unsub=onMessage(messaging,(payload)=>{
-        const title=payload.notification?.title||"Ease-On";
-        const body=payload.notification?.body||"You have a new notification";
-        setFcmToast({title,body});
-        setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,time:"Just now"},...p]);
-        setTimeout(()=>setFcmToast(null),5000);
-      });
-      return ()=>{if(typeof unsub==="function")unsub()};
-    }catch(e){console.log("FCM listener error:",e)}
-  },[]);
+  // (FCM only works on web, not in Capacitor apps)
 
   // ─── Request notification permission & save FCM token ───────────
   const requestNotificationPermission=async()=>{
-    if(!messaging||!getFcmToken)return;
+    // Skip on native apps and unsupported environments
+    if(typeof window==="undefined"||window.Capacitor||!("serviceWorker" in navigator)||!("Notification" in window))return;
     try{
       const permission=await Notification.requestPermission();
       if(permission==="granted"){
-        const token=await getFcmToken(messaging,{vapidKey:"REPLACE_WITH_VAPID_KEY"});
+        const{getMessaging,getToken,onMessage:onMsg}=await import("firebase/messaging");
+        const fbApp=(await import("firebase/app")).getApp();
+        const msg=getMessaging(fbApp);
+        const token=await getToken(msg,{vapidKey:"BOef8d5NXkPRDldCw9wL79FNokmqCvKr-oouhILNVRYS1JW-qU8RwWQ8-wPjmiW7GCtko-cxj72ju7jAV8yYl0g"});
         if(token)api.saveFcmToken(token).catch(e=>console.log("FCM token save error:",e));
+        // Listen for foreground messages
+        onMsg(msg,(payload)=>{
+          const title=payload.notification?.title||"Ease-On";
+          const body=payload.notification?.body||"You have a new notification";
+          setFcmToast({title,body});
+          setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,time:"Just now"},...p]);
+          setTimeout(()=>setFcmToast(null),5000);
+        });
       }
-    }catch(e){console.log("Notification permission error:",e)}
+    }catch(e){console.log("Notification setup error:",e)}
   };
 
   useEffect(()=>{if(screen==="chat")endRef.current?.scrollIntoView({behavior:"smooth"})},[screen,convos]);
@@ -789,7 +792,7 @@ export default function EaseOn(){
 const S={
   shell:{minHeight:"100vh",background:"#000",display:"flex",justifyContent:"center",fontFamily:"'Outfit',-apple-system,BlinkMacSystemFont,sans-serif"},
   phone:{width:"100%",maxWidth:420,minHeight:"100vh",background:T.bg,position:"relative",display:"flex",flexDirection:"column"},
-  content:{flex:1,overflowY:"auto",padding:"16px 18px 88px",WebkitOverflowScrolling:"touch"},
+  content:{flex:1,overflowY:"auto",paddingTop:"calc(16px + env(safe-area-inset-top, 0px))",paddingLeft:18,paddingRight:18,paddingBottom:88,WebkitOverflowScrolling:"touch"},
   card:{background:T.card,borderRadius:14,padding:16,border:`1px solid ${T.border}`},
   input:{width:"100%",padding:"12px 14px",background:T.raised,border:`1px solid ${T.border}`,borderRadius:10,color:T.text,fontSize:14,outline:"none",marginBottom:10,boxSizing:"border-box",fontFamily:"inherit"},
   textarea:{width:"100%",padding:"12px 14px",background:T.raised,border:`1px solid ${T.border}`,borderRadius:10,color:T.text,fontSize:14,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"inherit",lineHeight:1.5},
@@ -802,7 +805,7 @@ const S={
   dot:{position:"absolute",top:2,right:2,width:8,height:8,borderRadius:4,background:T.danger},
   avatarSm:{width:34,height:34,borderRadius:17,background:T.accentGlow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0},
   avatarMd:{width:42,height:42,borderRadius:21,background:T.accentGlow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0},
-  fab:{position:"fixed",bottom:80,right:"calc(50% - 185px)",width:52,height:52,borderRadius:26,background:T.accent,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 24px rgba(63,184,160,0.35)",zIndex:10},
-  tabBar:{display:"flex",justifyContent:"space-around",padding:"6px 0 14px",background:T.surface,borderTop:`1px solid ${T.border}`,position:"sticky",bottom:0,flexShrink:0},
+  fab:{position:"fixed",bottom:"calc(80px + env(safe-area-inset-bottom, 0px))",right:"calc(50% - 185px)",width:52,height:52,borderRadius:26,background:T.accent,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 24px rgba(63,184,160,0.35)",zIndex:10},
+  tabBar:{display:"flex",justifyContent:"space-around",padding:"6px 0 14px",paddingBottom:"calc(14px + env(safe-area-inset-bottom, 0px))",background:T.surface,borderTop:`1px solid ${T.border}`,position:"sticky",bottom:0,flexShrink:0},
   tabBtn:{display:"flex",flexDirection:"column",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:"4px 12px",gap:1,fontFamily:"inherit"},
 };

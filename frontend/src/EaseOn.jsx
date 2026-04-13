@@ -173,15 +173,13 @@ export default function EaseOn(){
 
   // ─── FCM foreground message listener ────────────────────────────
   useEffect(()=>{
-    if(!messaging)return;
+    if(!messaging||!onMessage)return;
     try{
       const unsub=onMessage(messaging,(payload)=>{
         const title=payload.notification?.title||"Ease-On";
         const body=payload.notification?.body||"You have a new notification";
         setFcmToast({title,body});
-        // Add to local notifications list
         setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,time:"Just now"},...p]);
-        // Auto-dismiss after 5s
         setTimeout(()=>setFcmToast(null),5000);
       });
       return ()=>{if(typeof unsub==="function")unsub()};
@@ -190,7 +188,7 @@ export default function EaseOn(){
 
   // ─── Request notification permission & save FCM token ───────────
   const requestNotificationPermission=async()=>{
-    if(!messaging)return;
+    if(!messaging||!getFcmToken)return;
     try{
       const permission=await Notification.requestPermission();
       if(permission==="granted"){

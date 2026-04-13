@@ -1,6 +1,5 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from "firebase/auth";
-import { getMessaging, getToken as getFcmToken, onMessage } from "firebase/messaging";
 
 const firebaseConfig = {
   // This will be filled in during setup — see README Step 2
@@ -16,8 +15,24 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-// FCM — may fail on unsupported browsers or mobile webviews
+// FCM — only works in regular browsers, not Capacitor/native webviews
 let messaging = null;
-try { messaging = getMessaging(app); } catch (e) { console.log("FCM not supported in this environment"); }
+let getFcmToken = null;
+let onMessage = null;
+
+const isNativeApp = typeof window !== "undefined" && (window.Capacitor || navigator.userAgent.includes("CapacitorHttp"));
+const hasServiceWorker = typeof window !== "undefined" && "serviceWorker" in navigator && "Notification" in window;
+
+// Lazy-load FCM for supported environments only
+const initFcm = async () => {
+  if (isNativeApp || !hasServiceWorker) return;
+  try {
+    const fcm = await import("firebase/messaging");
+    messaging = fcm.getMessaging(app);
+    getFcmToken = fcm.getToken;
+    onMessage = fcm.onMessage;
+  } catch (e) { console.log("FCM not available:", e.message); }
+};
+initFcm();
 
 export { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, googleProvider, signInWithPopup, sendPasswordResetEmail, messaging, getFcmToken, onMessage };

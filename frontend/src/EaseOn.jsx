@@ -130,7 +130,7 @@ export default function EaseOn(){
   const[settingsPhone,setSettingsPhone]=useState("");
   const[settingsAnon,setSettingsAnon]=useState(false);
   const[query,setQuery]=useState("");
-  const[reminders,setReminders]=useState([{id:1,text:"Log your mood",time:"9:00 AM",on:true},{id:2,text:"Write a reflection",time:"8:00 PM",on:true}]);
+  const[reminders,setReminders]=useState([{id:1,text:"Log your mood!",time:"9:00 AM",on:true},{id:2,text:"Write a reflection",time:"8:00 PM",on:true}]);
   const[groupMsgs,setGroupMsgs]=useState([]);
   const[groupInput,setGroupInput]=useState("");
   const[pTab,setPTab]=useState("insights");
@@ -482,7 +482,7 @@ export default function EaseOn(){
 
         {happyMemory&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}44`,background:`${T.accent}11`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{color:T.accent,fontWeight:600,fontSize:13}}>💛 Remember this day?</span><button style={S.icoBtn} onClick={()=>setHappyMemory(null)}><Ic.X/></button></div>
-          <p style={{color:T.text,fontSize:12,margin:0}}>On {fmtDate(happyMemory.date)}, you logged <strong>{MOODS.find(m=>m.value===happyMemory.value)?.label}</strong> {MOODS.find(m=>m.value===happyMemory.value)?.emoji}. Better days are always ahead.</p>
+          <p style={{color:T.text,fontSize:12,margin:0}}>On {fmtDate(happyMemory.date)}, you logged <strong>{MOODS.find(m=>m.value===happyMemory.value)?.label}</strong> {MOODS.find(m=>m.value===happyMemory.value)?.emoji}. Remember, better days are always ahead.</p>
         </div>}
 
         <div style={{...S.card,padding:"16px 16px 18px"}}>
@@ -645,7 +645,7 @@ export default function EaseOn(){
       if(!selCircle)return null;const cp=posts.filter(p=>p.circle===selCircle.tag);const m=joined.includes(selCircle.id);
       return(<>
         <TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title={selCircle.name}/>
-        <p style={{color:T.textSec,fontSize:13,margin:"-10px 0 6px"}}>{selCircle.tag} · {selCircle.members} members</p>
+        <p style={{color:T.textSec,fontSize:13,margin:"-10px 0 6px"}}>{selCircle.tag} · {selCircle.members} Members</p>
         <p style={{color:T.textDim,fontSize:13,marginBottom:14}}>{selCircle.desc}</p>
         <div style={{display:"flex",gap:8,marginBottom:20}}>
           <Pill active={!m} onClick={()=>{if(m){setJoined(p=>p.filter(id=>id!==selCircle.id));api.leaveCircle(selCircle.id).catch(()=>{})}else{setJoined(p=>[...p,selCircle.id]);api.joinCircle(selCircle.id).catch(()=>{})}}}>{m?"Leave Circle":"Join Circle"}</Pill>

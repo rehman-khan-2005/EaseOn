@@ -81,7 +81,7 @@ export default function EaseOn(){
   const[fcmToast,setFcmToast]=useState(null);
 
   // User — all from backend
-  const[user,setUser]=useState({name:"",username:"",avatar:"😊",email:"",phone:"",anonymous:false,karma:0});
+  const[user,setUser]=useState({id:null,name:"",username:"",avatar:"😊",email:"",phone:"",anonymous:false,karma:0});
   const[allUsers,setAllUsers]=useState([]);
 
   // Mood — all from backend
@@ -130,7 +130,21 @@ export default function EaseOn(){
   const[settingsPhone,setSettingsPhone]=useState("");
   const[settingsAnon,setSettingsAnon]=useState(false);
   const[query,setQuery]=useState("");
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
   const[reminders,setReminders]=useState([{id:1,text:"Log your mood!",time:"9:00 AM",on:true},{id:2,text:"Write a reflection",time:"8:00 PM",on:true}]);
+=======
+>>>>>>> Stashed changes
+  const[reminders,setReminders]=useState([{id:1,text:"Log your mood",time:"9:00 AM",on:true},{id:2,text:"Write a reflection",time:"8:00 PM",on:true}]);
+  const[showAddReminder,setShowAddReminder]=useState(false);
+  const[editReminderId,setEditReminderId]=useState(null);
+  const[reminderText,setReminderText]=useState("");
+  const[reminderTime,setReminderTime]=useState("09:00");
+<<<<<<< Updated upstream
+=======
+>>>>>>> 687b778 (Fix: self in contributors, auto-create circles, post edit/delete, reminders CRUD, notification prompts, time fixes, anonymous display, Google button on native)
+>>>>>>> Stashed changes
   const[groupMsgs,setGroupMsgs]=useState([]);
   const[groupInput,setGroupInput]=useState("");
   const[pTab,setPTab]=useState("insights");
@@ -140,6 +154,23 @@ export default function EaseOn(){
   const endRef=useRef(null);
   const groupEndRef=useRef(null);
   const[,setTick]=useState(0);
+
+  // Detect Capacitor native app (disables features that don't work in WKWebView)
+  const isNativeApp=typeof window!=="undefined"&&!!window.Capacitor;
+
+  // Notification banner state
+  const[showNotifBanner,setShowNotifBanner]=useState(false);
+  const[notifBannerDismissed,setNotifBannerDismissed]=useState(false);
+
+  useEffect(()=>{
+    if(!authChecked||!user.id||notifBannerDismissed)return;
+    if(typeof window==="undefined"||!("Notification" in window)||isNativeApp)return;
+    if(Notification.permission==="default")setShowNotifBanner(true);
+  },[authChecked,user.id,notifBannerDismissed]);
+
+  // Today's reminders: logged mood? made journal entry today?
+  const loggedToday=moodLoggedDate===todayStr();
+  const journaledToday=journals.some(j=>{const d=j.date instanceof Date?j.date:new Date(j.date);return d.toDateString()===todayStr()});
 
   // Timer: re-render every 15s so timeAgo updates in real-time
   useEffect(()=>{
@@ -158,7 +189,7 @@ export default function EaseOn(){
         try{
           setDataLoading(true);
           const me=await api.getMe();
-          setUser({name:me.display_name||me.username,username:me.username,avatar:me.avatar_url||"😊",email:me.email,phone:me.phone||"",anonymous:me.is_anonymous||false,karma:me.karma_score||0});
+          setUser({id:me.id,name:me.display_name||me.username,username:me.username,avatar:me.avatar_url||"😊",email:me.email,phone:me.phone||"",anonymous:me.is_anonymous||false,karma:me.karma_score||0});
           setSettingsName(me.display_name||me.username);setSettingsUser(me.username);setSettingsPhone(me.phone||"");
           setScreen("home");setTab("home");
           await loadAllData();
@@ -194,7 +225,7 @@ export default function EaseOn(){
           const title=payload.notification?.title||"Ease-On";
           const body=payload.notification?.body||"You have a new notification";
           setFcmToast({title,body});
-          setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,time:"Just now"},...p]);
+          setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,ts:Date.now()},...p]);
           setTimeout(()=>setFcmToast(null),5000);
         });
       }
@@ -238,7 +269,7 @@ export default function EaseOn(){
       }
       if(notifsRes.status==="fulfilled"){
         const ns=notifsRes.value?.notifications||notifsRes.value||[];
-        if(Array.isArray(ns))setNotifs(ns.map(n=>({id:n.id,text:n.content,read:n.is_read,time:timeAgo(new Date(n.created_at))})));
+        if(Array.isArray(ns))setNotifs(ns.map(n=>{const nts=n.created_at||n.createdAt;const parsed=nts?new Date(nts).getTime():Date.now();return{id:n.id,text:n.content,read:n.is_read,ts:isNaN(parsed)?Date.now():parsed}}));
       }
       if(usersRes.status==="fulfilled"){
         const us=Array.isArray(usersRes.value)?usersRes.value:(usersRes.value?.users||[]);
@@ -268,7 +299,24 @@ export default function EaseOn(){
 
   const saveJournal=()=>{if(!jText.trim())return;if(editJ){setJournals(p=>p.map(j=>j.id===editJ.id?{...j,text:jText,mood:jMood||j.mood,editedAt:new Date()}:j));api.updateJournal(editJ.id,{body:jText,mood_value:jMood||editJ.mood}).catch(()=>{})}else{const nid="j"+Date.now();setJournals(p=>[{id:nid,date:new Date(),text:jText,mood:jMood||3,vis:"private"},...p]);api.createJournal({body:jText,mood_value:jMood||3,visibility:"private"}).then(d=>{if(d?.id)setJournals(p=>p.map(j=>j.id===nid?{...j,id:d.id}:j))}).catch(()=>{})}setJText("");setJMood(null);setEditJ(null);goBack()};
 
-  const createPost=()=>{if(!newPostText.trim())return;const lid="p"+Date.now();setPosts(p=>[{id:lid,userId:"me",username:user.username,avatar:user.avatar,circle:newPostCircle||"#General",text:newPostText,mood:newPostMood||3,ts:Date.now(),likes:0,comments:[]},...p]);setUser(p=>({...p,karma:p.karma+2}));api.createPost({text:newPostText,circle_tag:newPostCircle||"#General",mood_value:newPostMood||3,visibility:newPostAud}).then(d=>{if(d?.id)setPosts(p=>p.map(x=>x.id===lid?{...x,id:d.id}:x))}).catch(()=>{});setNewPostText("");setNewPostCircle("");setNewPostMood(null);goBack()};
+  const createPost=()=>{
+    if(!newPostText.trim())return;
+    const lid="p"+Date.now();
+    const rawTag=newPostCircle.trim()||"#General";
+    const circleTag=rawTag.startsWith("#")?rawTag:"#"+rawTag.replace(/\s/g,"");
+    // Auto-create circle if it doesn't exist
+    const existingCircle=circles.find(c=>c.tag.toLowerCase()===circleTag.toLowerCase());
+    if(!existingCircle&&circleTag!=="#General"){
+      const name=circleTag.substring(1);
+      api.createCircle({name,description:"Auto-created from post"}).then(d=>{
+        if(d?.circle){setCircles(p=>[...p,{id:d.circle.id,name,tag:circleTag,members:1,desc:"Auto-created from post",vis:"public"}]);setJoined(p=>[...p,d.circle.id])}
+      }).catch(()=>{});
+    }
+    setPosts(p=>[{id:lid,userId:user.id||"me",username:user.username,avatar:user.avatar,circle:circleTag,text:newPostText,mood:newPostMood||3,ts:Date.now(),likes:0,comments:[]},...p]);
+    setUser(p=>({...p,karma:p.karma+2}));
+    api.createPost({text:newPostText,circle_tag:circleTag,mood_value:newPostMood||3,visibility:newPostAud}).then(d=>{if(d?.id)setPosts(p=>p.map(x=>x.id===lid?{...x,id:d.id}:x))}).catch(()=>{});
+    setNewPostText("");setNewPostCircle("");setNewPostMood(null);goBack();
+  };
 
   const toggleLike=pid=>{const s=new Set(liked);if(s.has(pid)){s.delete(pid);setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes-1}:x));api.unlikePost(pid).catch(()=>{})}else{s.add(pid);setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes+1}:x));api.likePost(pid).catch(()=>{})}setLiked(s)};
 
@@ -282,7 +330,8 @@ export default function EaseOn(){
 
   const unreadCount=convos.filter(c=>c.unread).length;
   const streak=calcStreak();
-  const myPostCount=posts.filter(p=>p.userId==="me").length;
+  const isMyPost=p=>p.userId==="me"||p.userId===user.id||p.username===user.username;
+  const myPostCount=posts.filter(p=>isMyPost(p)).length;
 
   // ─── Firebase Auth handlers ─────────────────────────────────────
   const validateEmail=e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
@@ -312,7 +361,7 @@ export default function EaseOn(){
       // Create profile in our database
       await api.registerProfile({username:regUser,email:regEmail,display_name:regName,firebase_uid:cred.user.uid});
       const me=await api.getMe();
-      setUser({name:me.display_name||regName,username:me.username,avatar:"😊",email:me.email,phone:"",anonymous:false,karma:0});
+      setUser({id:me.id,name:me.display_name||regName,username:me.username,avatar:"😊",email:me.email,phone:"",anonymous:false,karma:0});
       setSettingsName(regName);setSettingsUser(regUser);
       setLoading(false);setDataLoading(true);tabNav("home");await loadAllData();setDataLoading(false);
     }catch(e){
@@ -356,36 +405,59 @@ export default function EaseOn(){
 
   const handleLogout=async()=>{
     try{await signOut(auth)}catch(e){}
-    setUser({name:"",username:"",avatar:"😊",email:"",phone:"",anonymous:false,karma:0});
+    setUser({id:null,name:"",username:"",avatar:"😊",email:"",phone:"",anonymous:false,karma:0});
     setMoodLog([]);setJournals([]);setCircles([]);setPosts([]);setConvos([]);setNotifs([]);setAllUsers([]);
     setJoined([]);setTodayMood(null);setMoodLoggedDate(null);setMoodCounts({1:0,2:0,3:0,4:0,5:0});
+    // Clear all form fields
+    setLoginEmail("");setLoginPw("");setLoginErr("");
+    setRegName("");setRegUser("");setRegEmail("");setRegPw("");setRegErr("");
+    setRegMode(false);setShowForgotPw(false);setResetEmail("");setResetMsg("");
+    setLoading(false);
     setNavHist([]);setTab("home");setScreen("login");
   };
 
-  // Top contributors sorted by time range
+  // Top contributors sorted by time range (excludes current user)
   const getSortedContributors=()=>{
     const key=tcTimeRange==="week"?"weekKarma":tcTimeRange==="month"?"monthKarma":"karma";
-    return[...allUsers].sort((a,b)=>b[key]-a[key]);
+    return[...allUsers].filter(u=>!user.id||u.id!==user.id).sort((a,b)=>b[key]-a[key]);
   };
 
-  const displayName=u=>user.anonymous&&(u?.id==="me"||u?.username===user.username)?"Anonymous":u?.name||user.name;
-  const displayUsername=u=>user.anonymous&&(u?.id==="me"||u?.username===user.username)?"anonymous":u?.username||user.username;
+  // All other users (excluding self) — for DM, search
+  const otherUsers=allUsers.filter(u=>!user.id||u.id!==user.id);
+
+  const displayName=u=>{const isMe=!u||u?.id===user.id||u?.username===user.username;return user.anonymous&&isMe?"Anonymous":(u?.name||user.name)};
+  const displayUsername=u=>{const isMe=!u||u?.id===user.id||u?.username===user.username;return user.anonymous&&isMe?"anonymous":(u?.username||user.username)};
 
   // ─── Post Card (comment input uses local state to prevent focus loss) ─
   const PostCard=({p})=>{
     const[localComment,setLocalComment]=useState("");
-    const doComment=()=>{if(!localComment.trim())return;const isOwnPost=p.userId==="me"||p.username===user.username;setPosts(pp=>pp.map(x=>x.id===p.id?{...x,comments:[...x.comments,{user:user.username,avatar:user.avatar,text:localComment,ts:Date.now()}]}:x));if(!isOwnPost)setUser(prev=>({...prev,karma:prev.karma+1}));api.addComment(p.id,localComment).catch(()=>{});setLocalComment("")};
+    const[editing,setEditing]=useState(false);
+    const[editText,setEditText]=useState(p.text);
+    const doComment=()=>{if(!localComment.trim())return;const isOwnPost=isMyPost(p);setPosts(pp=>pp.map(x=>x.id===p.id?{...x,comments:[...x.comments,{user:user.username,avatar:user.avatar,text:localComment,ts:Date.now()}]}:x));if(!isOwnPost)setUser(prev=>({...prev,karma:prev.karma+1}));api.addComment(p.id,localComment).catch(()=>{});setLocalComment("")};
+    const saveEdit=()=>{if(!editText.trim())return;setPosts(pp=>pp.map(x=>x.id===p.id?{...x,text:editText,editedAt:Date.now()}:x));api.updatePost?.(p.id,{text:editText}).catch(()=>{});setEditing(false)};
     return(
     <div style={{...S.card,marginBottom:12,padding:"14px 16px"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
         <div style={{...S.avatarSm,cursor:"pointer"}} onClick={()=>{const u=allUsers.find(x=>x.id===p.userId);if(u){setViewingProfile(u);nav("userProfile")}}}>{p.avatar}</div>
         <div style={{flex:1,minWidth:0}}>
-          <span style={{color:T.text,fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={()=>{const u=allUsers.find(x=>x.id===p.userId);if(u){setViewingProfile(u);nav("userProfile")}}}>{p.userId==="me"?`@${displayUsername()}`:`@${p.username}`}</span>
-          <span style={{color:T.textDim,fontSize:11,marginLeft:6}}>{p.circle} · {timeAgo(new Date(p.ts||Date.now()))}</span>
+          <span style={{color:T.text,fontWeight:600,fontSize:13,cursor:"pointer"}} onClick={()=>{const u=allUsers.find(x=>x.id===p.userId);if(u){setViewingProfile(u);nav("userProfile")}}}>{isMyPost(p)?`@${displayUsername()}`:`@${p.username}`}</span>
+          <span style={{color:T.textDim,fontSize:11,marginLeft:6}}>{p.circle} · {timeAgo(new Date(p.ts||Date.now()))}{p.editedAt&&" · edited"}</span>
         </div>
+        {isMyPost(p)&&!editing&&<button title="Edit" style={{...S.icoBtn,padding:2,marginRight:4,fontSize:14}} onClick={()=>{setEditText(p.text);setEditing(true)}}>✏️</button>}
+        {isMyPost(p)&&<button title="Delete" style={{...S.icoBtn,padding:2}} onClick={()=>{if(confirm("Delete this post?")){setPosts(pp=>pp.filter(x=>x.id!==p.id));api.deletePost?.(p.id).catch(()=>{})}}}><Ic.X/></button>}
         <span style={{fontSize:22}}>{MOODS.find(m=>m.value===p.mood)?.emoji}</span>
       </div>
-      <p style={{color:T.text,fontSize:13.5,margin:"0 0 12px",lineHeight:1.55}}>{p.text}</p>
+      {editing?(
+        <div style={{marginBottom:12}}>
+          <textarea style={{...S.textarea,fontSize:13.5,minHeight:80}} value={editText} onChange={e=>setEditText(e.target.value)}/>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <button style={{...S.btnSmall,padding:"6px 14px"}} onClick={saveEdit}>Save</button>
+            <button style={{...S.btnSmall,padding:"6px 14px",background:T.raised,color:T.textSec}} onClick={()=>setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      ):(
+        <p style={{color:T.text,fontSize:13.5,margin:"0 0 12px",lineHeight:1.55}}>{p.text}</p>
+      )}
       <div style={{display:"flex",gap:18}}>
         <button style={S.icoBtn} onClick={()=>toggleLike(p.id)}><Ic.Like on={liked.has(p.id)}/><span style={{marginLeft:5,color:liked.has(p.id)?T.accent:T.textSec,fontSize:12}}>{p.likes}</span></button>
         <button style={S.icoBtn} onClick={()=>setViewingComments(viewingComments===p.id?null:p.id)}><Ic.Chat/><span style={{marginLeft:5,color:T.textSec,fontSize:12}}>{p.comments?.length||0}</span></button>
@@ -446,8 +518,8 @@ export default function EaseOn(){
               <input style={S.input} placeholder="Password (min 6 chars)" type="password" value={loginPw} onChange={e=>setLoginPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
               {loginErr&&<p style={{color:T.danger,fontSize:12,marginBottom:10}}>{loginErr}</p>}
               <button style={{...S.btnFull,opacity:loading?0.6:1}} onClick={handleLogin} disabled={loading}>{loading?"Logging in...":"Log In"}</button>
-              <div style={{display:"flex",alignItems:"center",gap:12,margin:"14px 0"}}><div style={{flex:1,height:1,background:T.border}}/><span style={{color:T.textDim,fontSize:12}}>or</span><div style={{flex:1,height:1,background:T.border}}/></div>
-              <button style={{...S.btnOutline,display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={handleGoogleSignIn} disabled={loading}><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.77-4.59l-7.98-6.19A23.93 23.93 0 000 24c0 3.77.9 7.35 2.56 10.78l7.97-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button>
+              {!isNativeApp&&<><div style={{display:"flex",alignItems:"center",gap:12,margin:"14px 0"}}><div style={{flex:1,height:1,background:T.border}}/><span style={{color:T.textDim,fontSize:12}}>or</span><div style={{flex:1,height:1,background:T.border}}/></div>
+              <button style={{...S.btnOutline,display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={handleGoogleSignIn} disabled={loading}><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.77-4.59l-7.98-6.19A23.93 23.93 0 000 24c0 3.77.9 7.35 2.56 10.78l7.97-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button></>}
               <p style={{textAlign:"center",color:T.textSec,marginTop:18,fontSize:13}}>Don't have an account? <span style={{color:T.accent,cursor:"pointer",fontWeight:600}} onClick={()=>{setRegMode(true);setLoginErr("")}}>Register</span></p>
               <p style={{textAlign:"center",marginTop:8}}><span style={{color:T.textDim,fontSize:12,cursor:"pointer"}} onClick={()=>{setShowForgotPw(true);setResetEmail(loginEmail);setResetMsg("")}}>Forgot password?</span></p>
             </>):(<>
@@ -457,8 +529,8 @@ export default function EaseOn(){
               <input style={S.input} placeholder="Password (min 6 chars) *" type="password" value={regPw} onChange={e=>setRegPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleRegister()}/>
               {regErr&&<p style={{color:T.danger,fontSize:12,marginBottom:10}}>{regErr}</p>}
               <button style={{...S.btnFull,opacity:loading?0.6:1}} onClick={handleRegister} disabled={loading}>{loading?"Creating account...":"Register"}</button>
-              <div style={{display:"flex",alignItems:"center",gap:12,margin:"18px 0"}}><div style={{flex:1,height:1,background:T.border}}/><span style={{color:T.textDim,fontSize:12}}>or</span><div style={{flex:1,height:1,background:T.border}}/></div>
-              <button style={{...S.btnOutline,display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={handleGoogleSignIn} disabled={loading}><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.77-4.59l-7.98-6.19A23.93 23.93 0 000 24c0 3.77.9 7.35 2.56 10.78l7.97-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button>
+              {!isNativeApp&&<><div style={{display:"flex",alignItems:"center",gap:12,margin:"18px 0"}}><div style={{flex:1,height:1,background:T.border}}/><span style={{color:T.textDim,fontSize:12}}>or</span><div style={{flex:1,height:1,background:T.border}}/></div>
+              <button style={{...S.btnOutline,display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onClick={handleGoogleSignIn} disabled={loading}><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 019.5 24c0-1.59.28-3.14.77-4.59l-7.98-6.19A23.93 23.93 0 000 24c0 3.77.9 7.35 2.56 10.78l7.97-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button></>}
               <p style={{textAlign:"center",color:T.textSec,marginTop:18,fontSize:13}}>Already have an account? <span style={{color:T.accent,cursor:"pointer",fontWeight:600}} onClick={()=>{setRegMode(false);setRegErr("")}}>Log In</span></p>
             </>)}
           </div>
@@ -480,9 +552,29 @@ export default function EaseOn(){
           </div>
         </div>
 
+        {showNotifBanner&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}44`,background:`${T.accent}11`,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:24}}>🔔</span>
+          <div style={{flex:1}}>
+            <div style={{color:T.text,fontWeight:600,fontSize:13}}>Enable notifications</div>
+            <div style={{color:T.textSec,fontSize:11,marginTop:2}}>Get reminders for mood check-ins and journal entries</div>
+          </div>
+          <button style={{...S.btnSmall,padding:"6px 12px",fontSize:11}} onClick={()=>{requestNotificationPermission();setShowNotifBanner(false);setNotifBannerDismissed(true)}}>Enable</button>
+          <button style={{...S.icoBtn,padding:2}} onClick={()=>{setShowNotifBanner(false);setNotifBannerDismissed(true)}}><Ic.X/></button>
+        </div>}
+
+        {(!loggedToday||!journaledToday)&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}33`,background:`${T.accent}08`}}>
+          <div style={{color:T.text,fontWeight:600,fontSize:13,marginBottom:8}}>✨ Today's Check-in</div>
+          <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+            {!loggedToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSec}}><span>○</span><span>Log your mood</span></div>}
+            {loggedToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.accent}}><span>✓</span><span>Mood logged</span></div>}
+            {!journaledToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSec,cursor:"pointer"}} onClick={()=>{setEditJ(null);setJText("");setJMood(null);nav("jEntry")}}><span>○</span><span>Write a journal entry</span></div>}
+            {journaledToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.accent}}><span>✓</span><span>Journal entry added</span></div>}
+          </div>
+        </div>}
+
         {happyMemory&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}44`,background:`${T.accent}11`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{color:T.accent,fontWeight:600,fontSize:13}}>💛 Remember this day?</span><button style={S.icoBtn} onClick={()=>setHappyMemory(null)}><Ic.X/></button></div>
-          <p style={{color:T.text,fontSize:12,margin:0}}>On {fmtDate(happyMemory.date)}, you logged <strong>{MOODS.find(m=>m.value===happyMemory.value)?.label}</strong> {MOODS.find(m=>m.value===happyMemory.value)?.emoji}. Remember, better days are always ahead.</p>
+          <p style={{color:T.text,fontSize:12,margin:0}}>On {fmtDate(happyMemory.date)}, you logged <strong>{MOODS.find(m=>m.value===happyMemory.value)?.label}</strong> {MOODS.find(m=>m.value===happyMemory.value)?.emoji}. Better days are always ahead.</p>
         </div>}
 
         <div style={{...S.card,padding:"16px 16px 18px"}}>
@@ -574,13 +666,13 @@ export default function EaseOn(){
 
     // ── MESSAGES LIST ────────────────────────────────────────────
     if(screen==="msgList"){
-      const filteredUsers=allUsers.filter(u=>u.name.toLowerCase().includes(dmSearch.toLowerCase())||u.username.toLowerCase().includes(dmSearch.toLowerCase()));
+      const filteredUsers=otherUsers.filter(u=>u.name.toLowerCase().includes(dmSearch.toLowerCase())||u.username.toLowerCase().includes(dmSearch.toLowerCase()));
       return(<>
         <TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Messages" right={<button style={S.icoBtn} onClick={()=>setShowNewDm(!showNewDm)}><Ic.Compose/></button>}/>
         {showNewDm&&<div style={{...S.card,marginBottom:16,padding:14}}>
           <p style={{color:T.text,fontWeight:600,fontSize:14,margin:"0 0 10px"}}>New Message</p>
           <input style={S.input} placeholder="Search users..." value={dmSearch} onChange={e=>setDmSearch(e.target.value)} autoFocus/>
-          <div style={{maxHeight:200,overflowY:"auto"}}>{(dmSearch?filteredUsers:allUsers.slice(0,5)).map(u=>(
+          <div style={{maxHeight:200,overflowY:"auto"}}>{(dmSearch?filteredUsers:otherUsers.slice(0,5)).map(u=>(
             <div key={u.id} onClick={()=>startNewDm(u.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 4px",cursor:"pointer",borderRadius:8}}>
               <div style={S.avatarSm}>{u.avatar}</div>
               <div style={{flex:1}}><div style={{color:T.text,fontSize:13,fontWeight:600}}>{u.name}</div><div style={{color:T.textSec,fontSize:11}}>@{u.username}</div></div>
@@ -645,7 +737,7 @@ export default function EaseOn(){
       if(!selCircle)return null;const cp=posts.filter(p=>p.circle===selCircle.tag);const m=joined.includes(selCircle.id);
       return(<>
         <TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title={selCircle.name}/>
-        <p style={{color:T.textSec,fontSize:13,margin:"-10px 0 6px"}}>{selCircle.tag} · {selCircle.members} Members</p>
+        <p style={{color:T.textSec,fontSize:13,margin:"-10px 0 6px"}}>{selCircle.tag} · {selCircle.members} members</p>
         <p style={{color:T.textDim,fontSize:13,marginBottom:14}}>{selCircle.desc}</p>
         <div style={{display:"flex",gap:8,marginBottom:20}}>
           <Pill active={!m} onClick={()=>{if(m){setJoined(p=>p.filter(id=>id!==selCircle.id));api.leaveCircle(selCircle.id).catch(()=>{})}else{setJoined(p=>[...p,selCircle.id]);api.joinCircle(selCircle.id).catch(()=>{})}}}>{m?"Leave Circle":"Join Circle"}</Pill>
@@ -695,7 +787,7 @@ export default function EaseOn(){
     if(screen==="search"){
       const fp=posts.filter(p=>!query||p.text.toLowerCase().includes(query.toLowerCase())||p.circle.toLowerCase().includes(query.toLowerCase()));
       const fc=circles.filter(c=>!query||c.name.toLowerCase().includes(query.toLowerCase())||c.tag.toLowerCase().includes(query.toLowerCase()));
-      const fu=query?allUsers.filter(u=>u.name.toLowerCase().includes(query.toLowerCase())||u.username.toLowerCase().includes(query.toLowerCase())):[];
+      const fu=query?otherUsers.filter(u=>u.name.toLowerCase().includes(query.toLowerCase())||u.username.toLowerCase().includes(query.toLowerCase())):[];
       return(<>
         <TopBar title="Search"/><input style={S.input} placeholder="Search posts, circles, users..." value={query} onChange={e=>setQuery(e.target.value)}/>
         {fu.length>0&&<><p style={S.sectionLabel}>USERS</p>{fu.map(u=><div key={u.id} onClick={()=>{setViewingProfile(u);nav("userProfile")}} style={{...S.card,marginBottom:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><div style={S.avatarSm}>{u.avatar}</div><div style={{flex:1}}><div style={{color:T.text,fontSize:13,fontWeight:600}}>{u.name}</div><div style={{color:T.textSec,fontSize:11}}>@{u.username}</div></div></div>)}</>}
@@ -754,7 +846,7 @@ export default function EaseOn(){
       </>);
     }
 
-    if(screen==="notifs")return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Notifications"/>{notifs.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:60}}><p style={{fontSize:36}}>🔔</p><p>No notifications</p></div>:notifs.map(n=><div key={n.id} onClick={()=>{setNotifs(p=>p.map(x=>x.id===n.id?{...x,read:true}:x));api.markNotifRead(n.id).catch(()=>{})}} style={{...S.card,marginBottom:8,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,opacity:n.read?0.5:1,cursor:"pointer"}}><div style={{width:8,height:8,borderRadius:4,background:n.read?"transparent":T.accent,flexShrink:0}}/><div style={{flex:1}}><div style={{color:T.text,fontSize:13}}>{n.text}</div><div style={{color:T.textSec,fontSize:11,marginTop:2}}>{n.time}</div></div></div>)}</>);
+    if(screen==="notifs")return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Notifications"/>{notifs.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:60}}><p style={{fontSize:36}}>🔔</p><p>No notifications</p></div>:notifs.map(n=><div key={n.id} onClick={()=>{setNotifs(p=>p.map(x=>x.id===n.id?{...x,read:true}:x));api.markNotifRead(n.id).catch(()=>{})}} style={{...S.card,marginBottom:8,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,opacity:n.read?0.5:1,cursor:"pointer"}}><div style={{width:8,height:8,borderRadius:4,background:n.read?"transparent":T.accent,flexShrink:0}}/><div style={{flex:1}}><div style={{color:T.text,fontSize:13}}>{n.text}</div><div style={{color:T.textSec,fontSize:11,marginTop:2}}>{timeAgo(new Date(n.ts||Date.now()))}</div></div></div>)}</>);
 
     if(screen==="groupChat"){
       return(<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 120px)"}}>
@@ -770,7 +862,37 @@ export default function EaseOn(){
       return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Mood Trends"/><div style={{...S.card,padding:20}}><div style={{display:"flex",alignItems:"flex-end",gap:6,height:170,justifyContent:"center"}}>{data.map((d,i)=>{const m=MOODS.find(x=>x.value===d.value);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flex:1,maxWidth:36}}><span style={{fontSize:15}}>{m?.emoji}</span><div style={{width:"100%",maxWidth:28,borderRadius:6,height:(d.value/5)*120,background:`linear-gradient(to top, ${m?.color}66, ${m?.color})`}}/><span style={{fontSize:9,color:T.textDim}}>{d.date.getDate()}/{d.date.getMonth()+1}</span></div>)})}</div></div><div style={{...S.card,marginTop:14,padding:16}}><p style={{color:T.text,fontWeight:600,fontSize:14,margin:"0 0 6px"}}>Summary</p><p style={{color:T.textSec,fontSize:13,margin:0,lineHeight:1.5}}>{moodLog.length} moods logged. Average: {(moodLog.reduce((a,h)=>a+h.value,0)/moodLog.length).toFixed(1)}/5.{streak>1&&` ${streak}-day streak!`}</p></div></>);
     }
 
-    if(screen==="reminders")return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Reminders"/>{reminders.map(r=><div key={r.id} style={{...S.card,marginBottom:10,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{color:T.text,fontSize:14,fontWeight:500}}>{r.text}</div><div style={{color:T.textSec,fontSize:12}}>{r.time}</div></div><button onClick={()=>setReminders(p=>p.map(x=>x.id===r.id?{...x,on:!x.on}:x))} style={{width:46,height:26,borderRadius:13,border:"none",cursor:"pointer",background:r.on?T.accent:T.border,position:"relative",transition:"background .2s"}}><div style={{width:22,height:22,borderRadius:11,background:"#fff",position:"absolute",top:2,left:r.on?22:2,transition:"left .2s"}}/></button></div>)}</>);
+    if(screen==="reminders"){
+      const formatTime12=t24=>{if(!t24)return "";const[h,m]=t24.split(":");const hr=parseInt(h);const ampm=hr>=12?"PM":"AM";const hr12=hr%12||12;return`${hr12}:${m} ${ampm}`};
+      const saveReminder=()=>{if(!reminderText.trim())return;const formatted=formatTime12(reminderTime);if(editReminderId){setReminders(p=>p.map(x=>x.id===editReminderId?{...x,text:reminderText,time:formatted}:x))}else{setReminders(p=>[...p,{id:Date.now(),text:reminderText,time:formatted,on:true}])}setReminderText("");setReminderTime("09:00");setEditReminderId(null);setShowAddReminder(false)};
+      const deleteReminder=id=>{if(confirm("Delete this reminder?"))setReminders(p=>p.filter(x=>x.id!==id))};
+      const editReminder=r=>{setEditReminderId(r.id);setReminderText(r.text);const m=r.time.match(/(\d+):(\d+)\s*(AM|PM)/i);if(m){let h=parseInt(m[1]);if(m[3].toUpperCase()==="PM"&&h<12)h+=12;if(m[3].toUpperCase()==="AM"&&h===12)h=0;setReminderTime(`${String(h).padStart(2,"0")}:${m[2]}`)}setShowAddReminder(true)};
+      return(<>
+        <TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Reminders" right={!showAddReminder&&<button style={S.btnSmall} onClick={()=>{setShowAddReminder(true);setEditReminderId(null);setReminderText("");setReminderTime("09:00")}}>+ Add</button>}/>
+        {showAddReminder&&<div style={{...S.card,marginBottom:14,padding:16}}>
+          <p style={{color:T.text,fontWeight:600,fontSize:14,margin:"0 0 10px"}}>{editReminderId?"Edit Reminder":"New Reminder"}</p>
+          <input style={S.input} placeholder="Reminder text (e.g. Drink water)" value={reminderText} onChange={e=>setReminderText(e.target.value)}/>
+          <label style={S.label}>Time</label>
+          <input style={S.input} type="time" value={reminderTime} onChange={e=>setReminderTime(e.target.value)}/>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <button style={{...S.btnSmall,flex:1,padding:"10px 0"}} onClick={saveReminder}>{editReminderId?"Update":"Add"}</button>
+            <button style={{...S.btnSmall,flex:1,padding:"10px 0",background:T.raised,color:T.textSec}} onClick={()=>{setShowAddReminder(false);setEditReminderId(null);setReminderText("")}}>Cancel</button>
+          </div>
+        </div>}
+        {reminders.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>⏰</p><p>No reminders yet</p></div>
+        :reminders.map(r=><div key={r.id} style={{...S.card,marginBottom:10,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{color:T.text,fontSize:14,fontWeight:500}}>{r.text}</div>
+            <div style={{color:T.textSec,fontSize:12}}>{r.time}</div>
+          </div>
+          <button style={{...S.icoBtn,fontSize:14,padding:4}} onClick={()=>editReminder(r)}>✏️</button>
+          <button style={{...S.icoBtn,padding:4}} onClick={()=>deleteReminder(r.id)}><Ic.X/></button>
+          <button onClick={()=>setReminders(p=>p.map(x=>x.id===r.id?{...x,on:!x.on}:x))} style={{width:46,height:26,borderRadius:13,border:"none",cursor:"pointer",background:r.on?T.accent:T.border,position:"relative",transition:"background .2s",flexShrink:0}}>
+            <div style={{width:22,height:22,borderRadius:11,background:"#fff",position:"absolute",top:2,left:r.on?22:2,transition:"left .2s"}}/>
+          </button>
+        </div>)}
+      </>);
+    }
 
     return null;
   };

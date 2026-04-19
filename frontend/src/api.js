@@ -66,6 +66,8 @@ const api = {
   likePost: (id) => request(`/posts/${id}/like`, { method: "POST" }),
   unlikePost: (id) => request(`/posts/${id}/unlike`, { method: "POST" }),
   addComment: (postId, text) => request(`/posts/${postId}/comments`, { method: "POST", body: JSON.stringify({ text }) }),
+  deletePost: (id) => request(`/posts/${id}`, { method: "DELETE" }),
+  updatePost: (id, body) => request(`/posts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
 
   // Messages
   getInbox: () => request("/messages/inbox"),

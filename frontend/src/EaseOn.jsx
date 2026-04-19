@@ -130,21 +130,11 @@ export default function EaseOn(){
   const[settingsPhone,setSettingsPhone]=useState("");
   const[settingsAnon,setSettingsAnon]=useState(false);
   const[query,setQuery]=useState("");
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-  const[reminders,setReminders]=useState([{id:1,text:"Log your mood!",time:"9:00 AM",on:true},{id:2,text:"Write a reflection",time:"8:00 PM",on:true}]);
-=======
->>>>>>> Stashed changes
   const[reminders,setReminders]=useState([{id:1,text:"Log your mood",time:"9:00 AM",on:true},{id:2,text:"Write a reflection",time:"8:00 PM",on:true}]);
   const[showAddReminder,setShowAddReminder]=useState(false);
   const[editReminderId,setEditReminderId]=useState(null);
   const[reminderText,setReminderText]=useState("");
   const[reminderTime,setReminderTime]=useState("09:00");
-<<<<<<< Updated upstream
-=======
->>>>>>> 687b778 (Fix: self in contributors, auto-create circles, post edit/delete, reminders CRUD, notification prompts, time fixes, anonymous display, Google button on native)
->>>>>>> Stashed changes
   const[groupMsgs,setGroupMsgs]=useState([]);
   const[groupInput,setGroupInput]=useState("");
   const[pTab,setPTab]=useState("insights");

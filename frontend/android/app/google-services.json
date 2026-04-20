@@ -20,7 +20,7 @@
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBo-e4gljI66wmWYhRQzpsu94g0eX2HarM"
+          "current_key": "REPLACE_WITH_VAPID_KEY"
         }
       ],
       "services": {

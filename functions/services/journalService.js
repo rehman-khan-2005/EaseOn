@@ -99,6 +99,16 @@ class JournalService {
     await entry.destroy();
     return { deleted: true };
   }
+
+  async getPublicByUser(userId) {
+    const { JournalEntry } = require("../models");
+    const entries = await JournalEntry.findAll({
+      where: { user_id: userId, visibility: "public" },
+      order: [["created_at", "DESC"]],
+      limit: 50,
+    });
+    return entries;
+  }
 }
 
 module.exports = new JournalService();

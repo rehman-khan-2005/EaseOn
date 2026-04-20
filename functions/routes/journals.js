@@ -21,6 +21,9 @@ router.post(
 // GET /api/journals — Get all entries
 router.get("/", journalController.getAll);
 
+// GET /api/journals/user/:userId — Get public journal entries by a specific user
+router.get("/user/:userId", journalController.getPublicByUser);
+
 // GET /api/journals/:id — Get single entry
 router.get("/:id", journalController.getById);
 

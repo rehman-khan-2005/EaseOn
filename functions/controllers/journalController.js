@@ -49,6 +49,15 @@ class JournalController {
       next(err);
     }
   }
+
+  async getPublicByUser(req, res, next) {
+    try {
+      const entries = await journalService.getPublicByUser(req.params.userId);
+      res.json(entries);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 module.exports = new JournalController();

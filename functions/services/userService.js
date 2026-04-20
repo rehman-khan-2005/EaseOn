@@ -111,22 +111,43 @@ class UserService {
    * Retrieves users ranked by karma_score (Reddit-style ranking)
    */
   async getTopContributors(limit = 10) {
+    const { KarmaEvent, Sequelize } = require("../models");
     const users = await User.findAll({
       order: [["karma_score", "DESC"]],
       limit,
       attributes: ["id", "username", "display_name", "avatar_url", "karma_score"],
     });
-    return users;
+
+    // Calculate real week/month karma from KarmaEvent table
+    const now = new Date();
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
+    const monthStart = new Date(now); monthStart.setDate(now.getDate() - 30);
+
+    const result = await Promise.all(users.map(async (u) => {
+      const weekSum = await KarmaEvent.sum("points", {
+        where: { user_id: u.id, created_at: { [Sequelize.Op.gte]: weekStart } },
+      }) || 0;
+      const monthSum = await KarmaEvent.sum("points", {
+        where: { user_id: u.id, created_at: { [Sequelize.Op.gte]: monthStart } },
+      }) || 0;
+      return { ...u.toJSON(), week_karma: weekSum, month_karma: monthSum };
+    }));
+
+    return result;
   }
 
   /**
    * Award karma points to a user
    */
-  async awardKarma(userId, points) {
+  async awardKarma(userId, points, reason) {
     const user = await User.findByPk(userId);
     if (!user) return;
     user.karma_score += points;
     await user.save();
+    try {
+      const { KarmaEvent } = require("../models");
+      await KarmaEvent.create({ user_id: userId, points, reason: reason || null });
+    } catch (e) { console.log("Karma event log error:", e.message); }
     return user.karma_score;
   }
 

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ease-On</string>
+    <string name="title_activity_main">Ease-On</string>
+    <string name="package_name">com.easeon380.app</string>
+    <string name="custom_url_scheme">com.easeon380.app</string>
+</resources>

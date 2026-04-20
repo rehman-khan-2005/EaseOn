@@ -49,6 +49,7 @@ const api = {
   // Journals
   createJournal: (body) => request("/journals", { method: "POST", body: JSON.stringify(body) }),
   getJournals: () => request("/journals"),
+  getPublicJournals: (userId) => request(`/journals/user/${userId}`),
   updateJournal: (id, body) => request(`/journals/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteJournal: (id) => request(`/journals/${id}`, { method: "DELETE" }),
 

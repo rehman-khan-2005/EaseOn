@@ -96,6 +96,7 @@ export default function EaseOn(){
   const[editJ,setEditJ]=useState(null);
   const[jText,setJText]=useState("");
   const[jMood,setJMood]=useState(null);
+  const[jVis,setJVis]=useState("private");
 
   // Circles — all from backend
   const[circles,setCircles]=useState([]);
@@ -109,7 +110,8 @@ export default function EaseOn(){
   const[posts,setPosts]=useState([]);
   const[liked,setLiked]=useState(new Set());
   const[newPostText,setNewPostText]=useState("");
-  const[newPostCircle,setNewPostCircle]=useState("");
+  const[newPostCircles,setNewPostCircles]=useState([]);
+  const[newCircleInput,setNewCircleInput]=useState("");
   const[newPostMood,setNewPostMood]=useState(null);
   const[newPostAud,setNewPostAud]=useState("public");
   const[viewingComments,setViewingComments]=useState(null);
@@ -121,6 +123,7 @@ export default function EaseOn(){
   const[dmSearch,setDmSearch]=useState("");
   const[showNewDm,setShowNewDm]=useState(false);
   const[viewingProfile,setViewingProfile]=useState(null);
+  const[profileTab,setProfileTab]=useState("posts");
   const[tcTimeRange,setTcTimeRange]=useState("all");
 
   // Notifications — all from backend
@@ -154,7 +157,9 @@ export default function EaseOn(){
 
   useEffect(()=>{
     if(!authChecked||!user.id||notifBannerDismissed)return;
-    if(typeof window==="undefined"||!("Notification" in window)||isNativeApp)return;
+    // On native apps, always show banner (permissions handled by native)
+    if(isNativeApp){setShowNotifBanner(true);return}
+    if(typeof window==="undefined"||!("Notification" in window))return;
     if(Notification.permission==="default")setShowNotifBanner(true);
   },[authChecked,user.id,notifBannerDismissed]);
 
@@ -167,6 +172,63 @@ export default function EaseOn(){
     const timer=setInterval(()=>setTick(t=>t+1),15000);
     return()=>clearInterval(timer);
   },[]);
+
+  // ─── Request notification permission & save FCM token ───────────
+  const requestNotificationPermission=async()=>{
+    // Native app path — use Capacitor Push Notifications
+    if(typeof window!=="undefined"&&window.Capacitor){
+      try{
+        const{PushNotifications}=await import("@capacitor/push-notifications");
+        // Check current permission status first
+        const current=await PushNotifications.checkPermissions();
+        let finalStatus=current.receive;
+        if(finalStatus!=="granted"){
+          // This triggers the native iOS/Android OS permission popup
+          const reqResult=await PushNotifications.requestPermissions();
+          finalStatus=reqResult.receive;
+        }
+        if(finalStatus==="granted"){
+          await PushNotifications.register();
+          PushNotifications.addListener("registration",token=>{
+            console.log("Push token:",token.value);
+            api.saveFcmToken(token.value).catch(e=>console.log("Token save error:",e));
+          });
+          PushNotifications.addListener("registrationError",err=>console.log("Push reg error:",err));
+          // Foreground notifications
+          PushNotifications.addListener("pushNotificationReceived",notification=>{
+            const title=notification.title||"Ease-On";
+            const body=notification.body||"You have a new notification";
+            setFcmToast({title,body});
+            setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,ts:Date.now()},...p]);
+            setTimeout(()=>setFcmToast(null),5000);
+          });
+        }else if(finalStatus==="denied"){
+          // User denied — they'll need to enable from device settings
+          console.log("Push notifications were denied. Enable in device settings.");
+        }
+      }catch(e){console.log("Native push setup error:",e)}
+      return;
+    }
+    // Web path — FCM via service worker
+    if(typeof window==="undefined"||!("serviceWorker" in navigator)||!("Notification" in window))return;
+    try{
+      const permission=await Notification.requestPermission();
+      if(permission==="granted"){
+        const{getMessaging,getToken,onMessage:onMsg}=await import("firebase/messaging");
+        const fbApp=(await import("firebase/app")).getApp();
+        const msg=getMessaging(fbApp);
+        const token=await getToken(msg,{vapidKey:"BOef8d5NXkPRDldCw9wL79FNokmqCvKr-oouhILNVRYS1JW-qU8RwWQ8-wPjmiW7GCtko-cxj72ju7jAV8yYl0g"});
+        if(token)api.saveFcmToken(token).catch(e=>console.log("FCM token save error:",e));
+        onMsg(msg,(payload)=>{
+          const title=payload.notification?.title||"Ease-On";
+          const body=payload.notification?.body||"You have a new notification";
+          setFcmToast({title,body});
+          setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,ts:Date.now()},...p]);
+          setTimeout(()=>setFcmToast(null),5000);
+        });
+      }
+    }catch(e){console.log("Notification setup error:",e)}
+  };
 
   // ─── Firebase Auth listener ─────────────────────────────────────
   useEffect(()=>{
@@ -184,7 +246,11 @@ export default function EaseOn(){
           setScreen("home");setTab("home");
           await loadAllData();
           setDataLoading(false);
-          requestNotificationPermission();
+          // On native apps, trigger permission popup immediately (native OS handles the dialog)
+          // On web, the banner shows for the user to click Enable
+          if(typeof window!=="undefined"&&window.Capacitor){
+            requestNotificationPermission();
+          }
         }catch(e){
           setDataLoading(false);
           console.log("Profile not found, user may need to complete registration");
@@ -198,31 +264,18 @@ export default function EaseOn(){
   // ─── FCM foreground message listener ────────────────────────────
   // (FCM only works on web, not in Capacitor apps)
 
-  // ─── Request notification permission & save FCM token ───────────
-  const requestNotificationPermission=async()=>{
-    // Skip on native apps and unsupported environments
-    if(typeof window==="undefined"||window.Capacitor||!("serviceWorker" in navigator)||!("Notification" in window))return;
-    try{
-      const permission=await Notification.requestPermission();
-      if(permission==="granted"){
-        const{getMessaging,getToken,onMessage:onMsg}=await import("firebase/messaging");
-        const fbApp=(await import("firebase/app")).getApp();
-        const msg=getMessaging(fbApp);
-        const token=await getToken(msg,{vapidKey:"BOef8d5NXkPRDldCw9wL79FNokmqCvKr-oouhILNVRYS1JW-qU8RwWQ8-wPjmiW7GCtko-cxj72ju7jAV8yYl0g"});
-        if(token)api.saveFcmToken(token).catch(e=>console.log("FCM token save error:",e));
-        // Listen for foreground messages
-        onMsg(msg,(payload)=>{
-          const title=payload.notification?.title||"Ease-On";
-          const body=payload.notification?.body||"You have a new notification";
-          setFcmToast({title,body});
-          setNotifs(p=>[{id:"n"+Date.now(),text:body,read:false,ts:Date.now()},...p]);
-          setTimeout(()=>setFcmToast(null),5000);
-        });
-      }
-    }catch(e){console.log("Notification setup error:",e)}
-  };
-
   useEffect(()=>{if(screen==="chat")endRef.current?.scrollIntoView({behavior:"smooth"})},[screen,convos]);
+
+  // Fetch public journals when viewing another user's profile
+  useEffect(()=>{
+    if(!viewingProfile||!viewingProfile.id||viewingProfile.id===user.id)return;
+    if(viewingProfile.publicJournals)return; // Already loaded
+    api.getPublicJournals(viewingProfile.id).then(entries=>{
+      if(!Array.isArray(entries))return;
+      const mapped=entries.map(j=>{const cts=j.created_at||j.createdAt;const ets=j.updated_at||j.updatedAt;const cp=cts?new Date(cts):null;const ep=ets?new Date(ets):null;return{id:j.id,date:cp&&!isNaN(cp)?cp:new Date(),editedAt:ep&&!isNaN(ep)&&ets!==cts?ep:null,text:j.body||j.text,mood:j.mood_value||3,vis:"public"}});
+      setViewingProfile(p=>p?{...p,publicJournals:mapped}:p);
+    }).catch(e=>console.log("Public journals fetch error:",e));
+  },[viewingProfile?.id]);
   useEffect(()=>{if(screen==="groupChat")groupEndRef.current?.scrollIntoView({behavior:"smooth"})},[screen,groupMsgs]);
 
   // ─── Load all data from backend ─────────────────────────────────
@@ -263,7 +316,7 @@ export default function EaseOn(){
       }
       if(usersRes.status==="fulfilled"){
         const us=Array.isArray(usersRes.value)?usersRes.value:(usersRes.value?.users||[]);
-        if(Array.isArray(us))setAllUsers(us.map(u=>({id:u.id,name:u.display_name||u.username,username:u.username,avatar:u.avatar_url||"😊",karma:u.karma_score||0,weekKarma:Math.floor((u.karma_score||0)*0.25),monthKarma:Math.floor((u.karma_score||0)*0.6),bio:"",online:false})));
+        if(Array.isArray(us))setAllUsers(us.map(u=>({id:u.id,name:u.display_name||u.username,username:u.username,avatar:u.avatar_url||"😊",karma:u.karma_score||0,weekKarma:u.week_karma||0,monthKarma:u.month_karma||0,bio:"",online:false})));
       }
       if(inboxRes.status==="fulfilled"){
         const inbox=Array.isArray(inboxRes.value)?inboxRes.value:[];
@@ -277,6 +330,23 @@ export default function EaseOn(){
   const goBack=()=>{if(navHist.length>0){const p=navHist[navHist.length-1];setNavHist(h=>h.slice(0,-1));setScreen(p)}else setScreen(tab)};
   const tabNav=t=>{setTab(t);setNavHist([]);setScreen(t)};
 
+  // Compute average mood from ALL sources (mood log, journals, posts) — rounded up
+  // This represents the user's overall mood assessment today
+  const computeTodayMood=()=>{
+    const today=todayStr();
+    const vals=[];
+    // From mood log
+    moodLog.forEach(m=>{const d=m.date instanceof Date?m.date:new Date(m.date);if(d.toDateString()===today&&m.value)vals.push(m.value)});
+    // From journal entries (only mine)
+    journals.forEach(j=>{const d=j.date instanceof Date?j.date:new Date(j.date);if(d.toDateString()===today&&j.mood)vals.push(j.mood)});
+    // From my posts (inline check to avoid using isMyPost before it's defined)
+    posts.forEach(p=>{const mine=p.userId==="me"||p.userId===user.id||p.username===user.username;if(mine&&p.mood&&new Date(p.ts||Date.now()).toDateString()===today)vals.push(p.mood)});
+    if(vals.length===0)return null;
+    const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+    return Math.ceil(avg);
+  };
+  const avgTodayMood=computeTodayMood();
+
   // ─── Actions (all sync to backend) ──────────────────────────────
   const logMood=m=>{
     if(moodLoggedDate===todayStr())return;
@@ -287,32 +357,58 @@ export default function EaseOn(){
     api.logMood({mood_value:m.value,emoji_label:m.label.toLowerCase()}).catch(e=>console.log("Mood sync:",e));
   };
 
-  const saveJournal=()=>{if(!jText.trim())return;if(editJ){setJournals(p=>p.map(j=>j.id===editJ.id?{...j,text:jText,mood:jMood||j.mood,editedAt:new Date()}:j));api.updateJournal(editJ.id,{body:jText,mood_value:jMood||editJ.mood}).catch(()=>{})}else{const nid="j"+Date.now();setJournals(p=>[{id:nid,date:new Date(),text:jText,mood:jMood||3,vis:"private"},...p]);api.createJournal({body:jText,mood_value:jMood||3,visibility:"private"}).then(d=>{if(d?.id)setJournals(p=>p.map(j=>j.id===nid?{...j,id:d.id}:j))}).catch(()=>{})}setJText("");setJMood(null);setEditJ(null);goBack()};
+  const saveJournal=()=>{
+    if(!jText.trim())return;
+    if(editJ){
+      setJournals(p=>p.map(j=>j.id===editJ.id?{...j,text:jText,mood:jMood||j.mood,vis:jVis,editedAt:new Date()}:j));
+      api.updateJournal(editJ.id,{body:jText,mood_value:jMood||editJ.mood,visibility:jVis}).catch(()=>{});
+    }else{
+      const nid="j"+Date.now();
+      setJournals(p=>[{id:nid,date:new Date(),text:jText,mood:jMood||3,vis:jVis,userId:user.id,username:user.username,avatar:user.avatar},...p]);
+      api.createJournal({body:jText,mood_value:jMood||3,visibility:jVis}).then(d=>{if(d?.id)setJournals(p=>p.map(j=>j.id===nid?{...j,id:d.id}:j))}).catch(()=>{});
+    }
+    setJText("");setJMood(null);setJVis("private");setEditJ(null);goBack();
+  };
 
   const createPost=()=>{
     if(!newPostText.trim())return;
-    const lid="p"+Date.now();
-    const rawTag=newPostCircle.trim()||"#General";
-    const circleTag=rawTag.startsWith("#")?rawTag:"#"+rawTag.replace(/\s/g,"");
-    // Auto-create circle if it doesn't exist
-    const existingCircle=circles.find(c=>c.tag.toLowerCase()===circleTag.toLowerCase());
-    if(!existingCircle&&circleTag!=="#General"){
-      const name=circleTag.substring(1);
-      api.createCircle({name,description:"Auto-created from post"}).then(d=>{
-        if(d?.circle){setCircles(p=>[...p,{id:d.circle.id,name,tag:circleTag,members:1,desc:"Auto-created from post",vis:"public"}]);setJoined(p=>[...p,d.circle.id])}
-      }).catch(()=>{});
-    }
-    setPosts(p=>[{id:lid,userId:user.id||"me",username:user.username,avatar:user.avatar,circle:circleTag,text:newPostText,mood:newPostMood||3,ts:Date.now(),likes:0,comments:[]},...p]);
-    setUser(p=>({...p,karma:p.karma+2}));
-    api.createPost({text:newPostText,circle_tag:circleTag,mood_value:newPostMood||3,visibility:newPostAud}).then(d=>{if(d?.id)setPosts(p=>p.map(x=>x.id===lid?{...x,id:d.id}:x))}).catch(()=>{});
-    setNewPostText("");setNewPostCircle("");setNewPostMood(null);goBack();
+    // Build list of target circles — default to #General if none selected
+    const targetTags=(newPostCircles.length>0?newPostCircles:["#General"]).map(t=>t.startsWith("#")?t:"#"+t.replace(/\s/g,""));
+    targetTags.forEach(circleTag=>{
+      const lid="p"+Date.now()+Math.random();
+      // Auto-create circle if it doesn't exist
+      const existingCircle=circles.find(c=>c.tag.toLowerCase()===circleTag.toLowerCase());
+      if(!existingCircle&&circleTag!=="#General"){
+        const name=circleTag.substring(1);
+        api.createCircle({name,description:"Auto-created from post"}).then(d=>{
+          if(d?.circle){setCircles(p=>[...p,{id:d.circle.id,name,tag:circleTag,members:1,desc:"Auto-created from post",vis:"public"}]);setJoined(p=>[...p,d.circle.id])}
+        }).catch(()=>{});
+      }
+      setPosts(p=>[{id:lid,userId:user.id||"me",username:user.username,avatar:user.avatar,circle:circleTag,text:newPostText,mood:newPostMood||3,ts:Date.now(),likes:0,comments:[]},...p]);
+      api.createPost({text:newPostText,circle_tag:circleTag,mood_value:newPostMood||3,visibility:newPostAud}).then(d=>{if(d?.id)setPosts(p=>p.map(x=>x.id===lid?{...x,id:d.id}:x))}).catch(()=>{});
+    });
+    setNewPostText("");setNewPostCircles([]);setNewCircleInput("");setNewPostMood(null);goBack();
   };
+
+  // When someone likes your post — increase your karma by 1 (tracked locally; server is authoritative)
+  const likeReceived=pid=>{const post=posts.find(x=>x.id===pid);if(post&&isMyPost(post)&&post.userId===user.id)setUser(p=>({...p,karma:p.karma+1}))};
 
   const toggleLike=pid=>{const s=new Set(liked);if(s.has(pid)){s.delete(pid);setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes-1}:x));api.unlikePost(pid).catch(()=>{})}else{s.add(pid);setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes+1}:x));api.likePost(pid).catch(()=>{})}setLiked(s)};
 
-  const sendMsg=()=>{if(!msgInput.trim()||!activeChat)return;setConvos(p=>p.map(c=>c.userId===activeChat?{...c,unread:false,msgs:[...c.msgs,{from:"me",text:msgInput,time:fmtTime(new Date()),date:"Today"}]}:c));api.sendDM(activeChat,msgInput).catch(()=>{});setMsgInput("")};
-  const startNewDm=uid=>{if(!convos.find(c=>c.userId===uid))setConvos(p=>[{userId:uid,unread:false,msgs:[]},...p]);setActiveChat(uid);setShowNewDm(false);setDmSearch("");nav("chat")};
-  const openChat=uid=>{setActiveChat(uid);setConvos(p=>p.map(c=>c.userId===uid?{...c,unread:false}:c));api.markRead(uid).catch(()=>{});nav("chat")};
+  const sendMsg=()=>{if(!msgInput.trim()||!activeChat)return;const nowTs=Date.now();setConvos(p=>p.map(c=>c.userId===activeChat?{...c,unread:false,msgs:[...c.msgs,{from:"me",text:msgInput,ts:nowTs,time:fmtTime(new Date()),date:"Today"}]}:c));api.sendDM(activeChat,msgInput).catch(()=>{});setMsgInput("")};
+  const startNewDm=uid=>{if(!convos.find(c=>c.userId===uid))setConvos(p=>[{userId:uid,unread:false,msgs:[]},...p]);setActiveChat(uid);setShowNewDm(false);setDmSearch("");nav("chat");loadConversation(uid)};
+  const openChat=uid=>{setActiveChat(uid);setConvos(p=>p.map(c=>c.userId===uid?{...c,unread:false}:c));api.markRead(uid).catch(()=>{});nav("chat");loadConversation(uid)};
+
+  // Load full message history for a conversation
+  const loadConversation=async(uid)=>{
+    try{
+      const res=await api.getConversation(uid);
+      const msgs=res?.messages||res?.data||(Array.isArray(res)?res:[]);
+      if(!Array.isArray(msgs))return;
+      const mapped=msgs.map(m=>{const mts=m.sent_at||m.created_at||m.createdAt;const parsed=mts?new Date(mts).getTime():Date.now();return{from:m.sender_id===user.id||m.from_me?"me":m.sender_id||uid,text:m.content||m.text||"",ts:isNaN(parsed)?Date.now():parsed,time:fmtTime(new Date(isNaN(parsed)?Date.now():parsed)),date:fmtDate(new Date(isNaN(parsed)?Date.now():parsed))}}).sort((a,b)=>a.ts-b.ts);
+      setConvos(p=>{const idx=p.findIndex(c=>c.userId===uid);if(idx===-1)return[...p,{userId:uid,unread:false,msgs:mapped}];const updated=[...p];updated[idx]={...updated[idx],msgs:mapped,unread:false};return updated});
+    }catch(e){console.log("Load conversation error:",e)}
+  };
 
   const sendGroupMsg=()=>{if(!groupInput.trim())return;setGroupMsgs(p=>[...p,{from:"me",text:groupInput,time:fmtTime(new Date())}]);if(selCircle)api.sendCircleMessage(selCircle.id,groupInput).catch(()=>{});setGroupInput("")};
   const createCircle=()=>{if(!newCircleName.trim())return;const nc={id:"c"+Date.now(),name:newCircleName,tag:"#"+newCircleName.replace(/\s/g,""),members:1,desc:newCircleDesc||"A new circle.",vis:"public"};setCircles(p=>[...p,nc]);setJoined(p=>[...p,nc.id]);api.createCircle({name:newCircleName,description:newCircleDesc}).then(d=>{if(d?.circle?.id){setCircles(p=>p.map(c=>c.id===nc.id?{...c,id:d.circle.id}:c));setJoined(p=>p.map(id=>id===nc.id?d.circle.id:id))}}).catch(()=>{});setNewCircleName("");setNewCircleDesc("");setShowCreateCircle(false)};
@@ -423,7 +519,7 @@ export default function EaseOn(){
     const[localComment,setLocalComment]=useState("");
     const[editing,setEditing]=useState(false);
     const[editText,setEditText]=useState(p.text);
-    const doComment=()=>{if(!localComment.trim())return;const isOwnPost=isMyPost(p);setPosts(pp=>pp.map(x=>x.id===p.id?{...x,comments:[...x.comments,{user:user.username,avatar:user.avatar,text:localComment,ts:Date.now()}]}:x));if(!isOwnPost)setUser(prev=>({...prev,karma:prev.karma+1}));api.addComment(p.id,localComment).catch(()=>{});setLocalComment("")};
+    const doComment=()=>{if(!localComment.trim())return;const isOwnPost=isMyPost(p);setPosts(pp=>pp.map(x=>x.id===p.id?{...x,comments:[...x.comments,{user:user.username,avatar:user.avatar,text:localComment,ts:Date.now()}]}:x));api.addComment(p.id,localComment).catch(()=>{});setLocalComment("")};
     const saveEdit=()=>{if(!editText.trim())return;setPosts(pp=>pp.map(x=>x.id===p.id?{...x,text:editText,editedAt:Date.now()}:x));api.updatePost?.(p.id,{text:editText}).catch(()=>{});setEditing(false)};
     return(
     <div style={{...S.card,marginBottom:12,padding:"14px 16px"}}>
@@ -557,7 +653,7 @@ export default function EaseOn(){
           <div style={{display:"flex",gap:8,flexDirection:"column"}}>
             {!loggedToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSec}}><span>○</span><span>Log your mood</span></div>}
             {loggedToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.accent}}><span>✓</span><span>Mood logged</span></div>}
-            {!journaledToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSec,cursor:"pointer"}} onClick={()=>{setEditJ(null);setJText("");setJMood(null);nav("jEntry")}}><span>○</span><span>Write a journal entry</span></div>}
+            {!journaledToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSec,cursor:"pointer"}} onClick={()=>{setEditJ(null);setJText("");setJMood(null);setJVis("private");nav("jEntry")}}><span>○</span><span>Write a journal entry</span></div>}
             {journaledToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.accent}}><span>✓</span><span>Journal entry added</span></div>}
           </div>
         </div>}
@@ -571,8 +667,15 @@ export default function EaseOn(){
           <p style={{color:T.text,fontWeight:600,fontSize:15,margin:"0 0 12px"}}>Today's Mood</p>
           <MoodRow selected={todayMood} onSelect={logMood} disabled={alreadyLogged}/>
           {alreadyLogged&&<p style={{color:T.accent,fontSize:12,textAlign:"center",marginTop:10,marginBottom:0,fontWeight:500}}>Mood logged for today ✓</p>}
+          {avgTodayMood&&<div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${T.border}`,textAlign:"center"}}>
+            <div style={{color:T.textSec,fontSize:11,fontWeight:600,marginBottom:6}}>OVERALL MOOD (Journal + Posts + Mood Log)</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+              <span style={{fontSize:28}}>{MOODS.find(m=>m.value===avgTodayMood)?.emoji}</span>
+              <span style={{color:T.text,fontSize:14,fontWeight:600}}>{MOODS.find(m=>m.value===avgTodayMood)?.label}</span>
+            </div>
+          </div>}
         </div>
-        <button style={S.btnFull} onClick={()=>{setEditJ(null);setJText("");setJMood(null);nav("jEntry")}}>Create Reflection</button>
+        <button style={S.btnFull} onClick={()=>{setEditJ(null);setJText("");setJMood(null);setJVis("private");nav("jEntry")}}>Create Reflection</button>
         <div style={{...S.card,marginTop:14,display:"flex",alignItems:"center",gap:14,padding:"14px 16px"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,minWidth:80}}><div style={{fontSize:34,fontWeight:900,color:T.accent,fontFamily:"'Outfit',sans-serif",lineHeight:1}}>{streak}</div><div><div style={{fontSize:11,fontWeight:600,color:T.textSec}}>Day Streak</div><div style={{fontSize:10,color:T.accent,fontWeight:500}}>Keep it up!</div></div></div>
           <div style={{flex:1,display:"flex",justifyContent:"space-around"}}>{week.map((d,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:10,color:T.textSec,fontWeight:600,marginBottom:4}}>{d.n}</div><div style={{width:26,height:26,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:d.today?T.accent:"transparent",color:d.today?"#fff":T.textDim}}>{d.d}</div></div>)}</div>
@@ -638,19 +741,55 @@ export default function EaseOn(){
 
     // ── USER PROFILE ─────────────────────────────────────────────
     if(screen==="userProfile"){
-      if(!viewingProfile)return null;const u=viewingProfile;const uPosts=posts.filter(p=>p.userId===u.id);
+      if(!viewingProfile)return null;
+      const u=viewingProfile;
+      const uPosts=posts.filter(p=>p.userId===u.id||p.username===u.username);
+      // Find all comments this user made on any post
+      const uComments=[];
+      posts.forEach(p=>{(p.comments||[]).forEach(c=>{if(c.user===u.username)uComments.push({...c,postId:p.id,postText:p.text,postAuthor:p.username,postMood:p.mood})})});
+      uComments.sort((a,b)=>(b.ts||0)-(a.ts||0));
+      // Public journal entries belonging to this user
+      // Note: For other users, journals must be fetched from backend. For self, use local state.
+      const uJournals=u.id===user.id
+        ?journals.filter(j=>j.vis==="public").sort((a,b)=>b.date-a.date)
+        :(viewingProfile.publicJournals||[]).sort((a,b)=>new Date(b.date)-new Date(a.date));
       return(<>
         <TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>}/>
         <div style={{textAlign:"center",marginBottom:20}}>
           <div style={{width:80,height:80,borderRadius:40,background:T.accentGlow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:40,border:`2px solid ${T.accent}`,margin:"0 auto"}}>{u.avatar}</div>
           <div style={{color:T.text,fontWeight:700,fontSize:22,marginTop:10}}>{u.name}</div>
           <div style={{color:T.textSec,fontSize:13}}>@{u.username}</div>
-          <div style={{display:"flex",justifyContent:"center",gap:20,marginTop:14}}>
+          <div style={{display:"flex",justifyContent:"center",gap:30,marginTop:14}}>
             <div style={{textAlign:"center"}}><div style={{color:T.text,fontWeight:800,fontSize:20}}>{uPosts.length}</div><div style={{color:T.textSec,fontSize:11}}>Posts</div></div>
+            <div style={{textAlign:"center"}}><div style={{color:T.text,fontWeight:800,fontSize:20}}>{uComments.length}</div><div style={{color:T.textSec,fontSize:11}}>Comments</div></div>
+            <div style={{textAlign:"center"}}><div style={{color:T.text,fontWeight:800,fontSize:20}}>{uJournals.length}</div><div style={{color:T.textSec,fontSize:11}}>Journal</div></div>
           </div>
           <button style={{...S.btnFull,marginTop:16,maxWidth:220,marginLeft:"auto",marginRight:"auto"}} onClick={()=>startNewDm(u.id)}>Send Direct Message</button>
         </div>
-        {uPosts.length>0&&<><p style={{color:T.text,fontWeight:600,fontSize:15,marginBottom:10}}>Recent Posts</p>{uPosts.map(p=><PostCard key={p.id} p={p}/>)}</>}
+        <div style={{display:"flex",background:T.raised,borderRadius:10,overflow:"hidden",marginBottom:16}}>
+          {["posts","comments","journal"].map(t=><button key={t} onClick={()=>setProfileTab(t)} style={{flex:1,padding:"10px 0",border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:profileTab===t?T.accent:"transparent",color:profileTab===t?"#fff":T.textSec,borderRadius:profileTab===t?10:0}}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+        </div>
+        {profileTab==="posts"&&(uPosts.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>📝</p><p>No posts yet</p></div>:uPosts.map(p=><PostCard key={p.id} p={p}/>))}
+        {profileTab==="comments"&&(uComments.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>💬</p><p>No comments yet</p></div>:uComments.map((c,i)=>(
+          <div key={i} onClick={()=>{const p=posts.find(x=>x.id===c.postId);if(p){setViewingComments(p.id);goBack()}}} style={{...S.card,marginBottom:10,padding:"12px 14px",cursor:"pointer"}}>
+            <div style={{color:T.textDim,fontSize:11,marginBottom:6}}>Commented on @{c.postAuthor}'s post · {timeAgo(new Date(c.ts||Date.now()))}</div>
+            <p style={{color:T.textSec,fontSize:12,margin:"0 0 8px",lineHeight:1.4,fontStyle:"italic",borderLeft:`2px solid ${T.border}`,paddingLeft:8}}>"{c.postText.length>80?c.postText.substring(0,80)+"...":c.postText}"</p>
+            <p style={{color:T.text,fontSize:13,margin:0,lineHeight:1.5}}>{c.text}</p>
+          </div>
+        )))}
+        {profileTab==="journal"&&(uJournals.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>📔</p><p>No public journal entries</p></div>:uJournals.map(j=>(
+          <div key={j.id} style={{...S.card,marginBottom:10,padding:"12px 14px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <span style={{fontSize:20}}>{MOODS.find(m=>m.value===j.mood)?.emoji||"😐"}</span>
+              <div style={{flex:1}}>
+                <div style={{color:T.textSec,fontSize:12}}>{fmtDate(j.date)} · {fmtTime(j.date)}</div>
+                {j.editedAt&&<div style={{color:T.textDim,fontSize:10,fontStyle:"italic"}}>edited {fmtDate(j.editedAt)}</div>}
+              </div>
+              <span style={{fontSize:9,color:T.accent,background:T.accentGlow,padding:"3px 8px",borderRadius:6,fontWeight:600}}>🌐 public</span>
+            </div>
+            <p style={{color:T.text,fontSize:13,margin:0,lineHeight:1.5}}>{j.text}</p>
+          </div>
+        )))}
       </>);
     }
 
@@ -732,7 +871,7 @@ export default function EaseOn(){
         <div style={{display:"flex",gap:8,marginBottom:20}}>
           <Pill active={!m} onClick={()=>{if(m){setJoined(p=>p.filter(id=>id!==selCircle.id));api.leaveCircle(selCircle.id).catch(()=>{})}else{setJoined(p=>[...p,selCircle.id]);api.joinCircle(selCircle.id).catch(()=>{})}}}>{m?"Leave Circle":"Join Circle"}</Pill>
           {m&&<Pill onClick={()=>nav("groupChat")}>Group Chat</Pill>}
-          {m&&<Pill onClick={()=>{setNewPostCircle(selCircle.tag);setNewPostText("");setNewPostMood(null);nav("createPost")}} s={{background:T.accent,color:"#fff"}}>+ Post</Pill>}
+          {m&&<Pill onClick={()=>{setNewPostCircles([selCircle.tag]);setNewCircleInput("");setNewPostText("");setNewPostMood(null);nav("createPost")}} s={{background:T.accent,color:"#fff"}}>+ Post</Pill>}
         </div>
         <p style={{color:T.text,fontWeight:600,fontSize:15,marginBottom:10}}>Circle Feed</p>
         {cp.length===0?<p style={{color:T.textDim,textAlign:"center",marginTop:30,fontSize:13}}>No posts yet — be the first!</p>:cp.map(p=><PostCard key={p.id} p={p}/>)}
@@ -744,8 +883,8 @@ export default function EaseOn(){
       return(<>
         <TopBar title="Journal"/>
         {journals.length===0?<div style={{textAlign:"center",color:T.textDim,marginTop:60}}><p style={{fontSize:36}}>📝</p><p>No journal entries yet</p></div>
-        :journals.sort((a,b)=>b.date-a.date).map(j=><div key={j.id} onClick={()=>{setEditJ(j);setJText(j.text);setJMood(j.mood);nav("jEntry")}} style={{...S.card,marginBottom:10,padding:"12px 14px",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:22}}>{MOODS.find(m=>m.value===j.mood)?.emoji||"😐"}</span><div style={{flex:1}}><div style={{color:T.textSec,fontSize:12}}>{fmtDate(j.date)} · {fmtTime(j.date)}</div>{j.editedAt&&<div style={{color:T.textDim,fontSize:10,fontStyle:"italic"}}>edited {fmtDate(j.editedAt)} · {fmtTime(j.editedAt)}</div>}</div><span style={{fontSize:9,color:T.textDim,background:T.raised,padding:"3px 8px",borderRadius:6}}>{j.vis}</span></div><p style={{color:T.text,fontSize:13,margin:0,lineHeight:1.5}}>{j.text}</p></div>)}
-        <button style={S.fab} onClick={()=>{setEditJ(null);setJText("");setJMood(null);nav("jEntry")}}><Ic.Plus/></button>
+        :journals.sort((a,b)=>b.date-a.date).map(j=><div key={j.id} onClick={()=>{setEditJ(j);setJText(j.text);setJMood(j.mood);setJVis(j.vis||"private");nav("jEntry")}} style={{...S.card,marginBottom:10,padding:"12px 14px",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:22}}>{MOODS.find(m=>m.value===j.mood)?.emoji||"😐"}</span><div style={{flex:1}}><div style={{color:T.textSec,fontSize:12}}>{fmtDate(j.date)} · {fmtTime(j.date)}</div>{j.editedAt&&<div style={{color:T.textDim,fontSize:10,fontStyle:"italic"}}>edited {fmtDate(j.editedAt)} · {fmtTime(j.editedAt)}</div>}</div><span style={{fontSize:9,color:j.vis==="public"?T.accent:T.textDim,background:j.vis==="public"?T.accentGlow:T.raised,padding:"3px 8px",borderRadius:6,fontWeight:600}}>{j.vis==="public"?"🌐 public":"🔒 private"}</span></div><p style={{color:T.text,fontSize:13,margin:0,lineHeight:1.5}}>{j.text}</p></div>)}
+        <button style={S.fab} onClick={()=>{setEditJ(null);setJText("");setJMood(null);setJVis("private");nav("jEntry")}}><Ic.Plus/></button>
       </>);
     }
 
@@ -757,15 +896,37 @@ export default function EaseOn(){
         <textarea style={S.textarea} rows={8} placeholder="Write your thoughts..." value={jText} onChange={e=>setJText(e.target.value)}/>
         <p style={{color:T.text,fontWeight:600,fontSize:14,marginTop:22,marginBottom:10}}>Feeling:</p>
         <MoodRow selected={jMood} onSelect={m=>setJMood(m.value)} size={28}/>
+        <p style={{color:T.text,fontWeight:600,fontSize:14,marginTop:22,marginBottom:10}}>Visibility</p>
+        <div style={{display:"flex",background:T.raised,borderRadius:10,overflow:"hidden"}}>
+          {[{k:"private",l:"🔒 Private",d:"Only you can see this"},{k:"public",l:"🌐 Public",d:"Share with the community"}].map(v=><button key={v.k} onClick={()=>setJVis(v.k)} style={{flex:1,padding:"11px 8px",border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:jVis===v.k?T.accent:"transparent",color:jVis===v.k?"#fff":T.textSec}}>{jVis===v.k&&"✓ "}{v.l}</button>)}
+        </div>
+        <p style={{color:T.textDim,fontSize:11,marginTop:8,lineHeight:1.4}}>{jVis==="public"?"This entry will be visible to other users on your profile.":"Only visible to you. Shown on your profile but hidden from others."}</p>
         {editJ&&<button style={{...S.btnOutline,marginTop:24,borderColor:T.danger,color:T.danger}} onClick={()=>{setJournals(p=>p.filter(j=>j.id!==editJ.id));api.deleteJournal(editJ.id).catch(()=>{});goBack()}}>Delete Entry</button>}
       </>);
     }
 
     // ── CREATE POST ─────────────────────────────────────────────
     if(screen==="createPost"){
+      const addCircleTag=(raw)=>{const t=raw.trim();if(!t)return;const tag=t.startsWith("#")?t:"#"+t.replace(/\s/g,"");if(!newPostCircles.find(x=>x.toLowerCase()===tag.toLowerCase()))setNewPostCircles(p=>[...p,tag]);setNewCircleInput("")};
+      const removeCircleTag=tag=>setNewPostCircles(p=>p.filter(x=>x!==tag));
       return(<>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}><button style={{...S.icoBtn,color:T.textSec,fontSize:15,fontFamily:"inherit"}} onClick={goBack}>Cancel</button><button style={{...S.icoBtn,color:T.accent,fontSize:15,fontWeight:700,fontFamily:"inherit"}} onClick={createPost}>Post</button></div>
-        <label style={S.label}>Circle Tag</label><input style={S.input} placeholder="#General" value={newPostCircle} onChange={e=>setNewPostCircle(e.target.value)}/>
+        <label style={S.label}>Circles (post to one or more)</label>
+        {newPostCircles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+          {newPostCircles.map(tag=><div key={tag} style={{display:"flex",alignItems:"center",gap:4,background:T.accentGlow,color:T.accent,padding:"4px 10px",borderRadius:14,fontSize:12,fontWeight:600,border:`1px solid ${T.accent}44`}}>
+            {tag}
+            <span style={{cursor:"pointer",fontSize:16,lineHeight:1,marginLeft:2}} onClick={()=>removeCircleTag(tag)}>×</span>
+          </div>)}
+        </div>}
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          <input style={{...S.input,flex:1,marginBottom:0}} placeholder="Type circle name (e.g. general)" value={newCircleInput} onChange={e=>setNewCircleInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(e.preventDefault(),addCircleTag(newCircleInput))}/>
+          <button style={{...S.btnSmall,padding:"10px 16px"}} onClick={()=>addCircleTag(newCircleInput)}>Add</button>
+        </div>
+        {circles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+          {circles.slice(0,8).map(c=>{const isSel=newPostCircles.find(x=>x.toLowerCase()===c.tag.toLowerCase());return(
+            <button key={c.id} onClick={()=>isSel?removeCircleTag(c.tag):addCircleTag(c.tag)} style={{border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:14,fontSize:11,fontWeight:600,background:isSel?T.accent:T.raised,color:isSel?"#fff":T.textSec,fontFamily:"inherit"}}>{c.tag}</button>
+          )})}
+        </div>}
         <p style={{color:T.text,fontWeight:600,fontSize:16,marginTop:12,marginBottom:8}}>What's Happening?</p><textarea style={S.textarea} rows={6} placeholder="Share your thoughts..." value={newPostText} onChange={e=>setNewPostText(e.target.value)}/>
         <p style={{color:T.text,fontWeight:600,fontSize:14,marginTop:22,marginBottom:10}}>Feeling:</p><MoodRow selected={newPostMood} onSelect={m=>setNewPostMood(m.value)} size={28}/>
         <p style={{color:T.text,fontWeight:600,fontSize:14,marginTop:24,marginBottom:10}}>Audience</p>
@@ -816,7 +977,7 @@ export default function EaseOn(){
           <button style={{...S.btnOutline,marginTop:8}} onClick={()=>nav("reminders")}>Manage Reminders</button>
           {posts.filter(p=>p.userId==="me").length>0&&<><p style={{color:T.text,fontWeight:600,fontSize:15,margin:"20px 0 10px"}}>Your Post History</p>{posts.filter(p=>p.userId==="me").slice(0,3).map(p=><PostCard key={p.id} p={p}/>)}</>}
         </>)}
-        {pTab==="posts"&&(myPostCount===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>📝</p><p>No posts yet</p></div>:posts.filter(p=>p.userId==="me").map(p=><PostCard key={p.id} p={p}/>))}
+        {pTab==="posts"&&(myPostCount===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>📝</p><p>No posts yet</p></div>:posts.filter(p=>isMyPost(p)).map(p=><PostCard key={p.id} p={p}/>))}
       </>);
     }
 
@@ -847,9 +1008,24 @@ export default function EaseOn(){
     }
 
     if(screen==="moodGraph"){
-      const data=moodLog.slice(-14);
+      // Combine mood values from all 3 sources, grouped by day
+      const byDay={};
+      const addToDay=(dateStr,val)=>{if(!byDay[dateStr])byDay[dateStr]={vals:[],date:new Date(dateStr)};byDay[dateStr].vals.push(val)};
+      moodLog.forEach(m=>{const d=m.date instanceof Date?m.date:new Date(m.date);if(isNaN(d))return;addToDay(d.toDateString(),m.value)});
+      journals.forEach(j=>{const d=j.date instanceof Date?j.date:new Date(j.date);if(isNaN(d)||!j.mood)return;addToDay(d.toDateString(),j.mood)});
+      posts.forEach(p=>{const mine=p.userId==="me"||p.userId===user.id||p.username===user.username;if(!mine||!p.mood)return;const d=new Date(p.ts||Date.now());if(isNaN(d))return;addToDay(d.toDateString(),p.mood)});
+      // Build sorted array of daily averages (rounded up), take last 14 days
+      const data=Object.values(byDay).map(d=>({date:d.date,value:Math.ceil(d.vals.reduce((a,b)=>a+b,0)/d.vals.length),count:d.vals.length})).sort((a,b)=>a.date-b.date).slice(-14);
       if(data.length===0)return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Mood Trends"/><div style={{textAlign:"center",color:T.textDim,marginTop:60}}><p style={{fontSize:36}}>📊</p><p>Log some moods to see your trends</p></div></>);
-      return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Mood Trends"/><div style={{...S.card,padding:20}}><div style={{display:"flex",alignItems:"flex-end",gap:6,height:170,justifyContent:"center"}}>{data.map((d,i)=>{const m=MOODS.find(x=>x.value===d.value);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flex:1,maxWidth:36}}><span style={{fontSize:15}}>{m?.emoji}</span><div style={{width:"100%",maxWidth:28,borderRadius:6,height:(d.value/5)*120,background:`linear-gradient(to top, ${m?.color}66, ${m?.color})`}}/><span style={{fontSize:9,color:T.textDim}}>{d.date.getDate()}/{d.date.getMonth()+1}</span></div>)})}</div></div><div style={{...S.card,marginTop:14,padding:16}}><p style={{color:T.text,fontWeight:600,fontSize:14,margin:"0 0 6px"}}>Summary</p><p style={{color:T.textSec,fontSize:13,margin:0,lineHeight:1.5}}>{moodLog.length} moods logged. Average: {(moodLog.reduce((a,h)=>a+h.value,0)/moodLog.length).toFixed(1)}/5.{streak>1&&` ${streak}-day streak!`}</p></div></>);
+      const totalEntries=data.reduce((a,b)=>a+b.count,0);
+      const overallAvg=data.reduce((a,b)=>a+b.value*b.count,0)/totalEntries;
+      return(<><TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title="Mood Trends"/>
+        <div style={{...S.card,padding:20}}>
+          <p style={{color:T.textSec,fontSize:11,textAlign:"center",fontWeight:600,margin:"0 0 14px"}}>DAILY AVERAGE (Mood Log + Journal + Posts)</p>
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:170,justifyContent:"center"}}>{data.map((d,i)=>{const m=MOODS.find(x=>x.value===d.value);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flex:1,maxWidth:36}}><span style={{fontSize:15}}>{m?.emoji}</span><div style={{width:"100%",maxWidth:28,borderRadius:6,height:(d.value/5)*120,background:`linear-gradient(to top, ${m?.color}66, ${m?.color})`}}/><span style={{fontSize:9,color:T.textDim}}>{d.date.getDate()}/{d.date.getMonth()+1}</span></div>)})}</div>
+        </div>
+        <div style={{...S.card,marginTop:14,padding:16}}><p style={{color:T.text,fontWeight:600,fontSize:14,margin:"0 0 6px"}}>Summary</p><p style={{color:T.textSec,fontSize:13,margin:0,lineHeight:1.5}}>{totalEntries} mood data points across {data.length} day{data.length!==1?"s":""}. Overall average: {overallAvg.toFixed(1)}/5.{streak>1&&` ${streak}-day streak!`}</p></div>
+      </>);
     }
 
     if(screen==="reminders"){

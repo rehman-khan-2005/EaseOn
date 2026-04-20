@@ -6,7 +6,7 @@ class PostController {
   async create(req, res, next) {
     try {
       const post = await postService.create(req.user.id, req.body);
-      await userService.awardKarma(req.user.id, 2);
+      // No karma for creating your own post — only for receiving engagement
       res.status(201).json(post);
     } catch (e) { next(e); }
   }
@@ -32,7 +32,7 @@ class PostController {
   async addComment(req, res, next) {
     try {
       const comment = await postService.addComment(req.params.id, req.user.id, req.body.text);
-      // Notify post owner (if not commenting on own post)
+      // Award karma to POST OWNER when someone else comments on their post
       try {
         const post = await postService.getById(req.params.id);
         if (post.user_id !== req.user.id) {
@@ -42,7 +42,8 @@ class PostController {
             content: `${commenterName} commented on your post`,
             reference_id: req.params.id,
           });
-          await userService.awardKarma(req.user.id, 1);
+          // Karma goes to POST OWNER (not commenter) — rewarding engagement on their content
+          await userService.awardKarma(post.user_id, 1);
         }
       } catch (notifErr) { console.log("Comment notification error:", notifErr.message); }
       res.status(201).json(comment);

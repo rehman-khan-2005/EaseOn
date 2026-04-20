@@ -20,6 +20,7 @@ const Message = require("./Message")(sequelize);
 const Notification = require("./Notification")(sequelize);
 const Post = require("./Post")(sequelize);
 const Comment = require("./Comment")(sequelize);
+const KarmaEvent = require("./KarmaEvent")(sequelize);
 
 User.hasMany(MoodCheckIn, { foreignKey: "user_id", as: "moodCheckIns" });
 MoodCheckIn.belongsTo(User, { foreignKey: "user_id", as: "user" });
@@ -45,5 +46,7 @@ Post.hasMany(Comment, { foreignKey: "post_id", as: "comments" });
 Comment.belongsTo(Post, { foreignKey: "post_id", as: "post" });
 User.hasMany(Comment, { foreignKey: "user_id", as: "comments" });
 Comment.belongsTo(User, { foreignKey: "user_id", as: "user" });
+User.hasMany(KarmaEvent, { foreignKey: "user_id", as: "karmaEvents" });
+KarmaEvent.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
-module.exports = { sequelize, Sequelize, User, MoodCheckIn, JournalEntry, SupportCircle, CircleMembership, Message, Notification, Post, Comment };
+module.exports = { sequelize, Sequelize, User, MoodCheckIn, JournalEntry, SupportCircle, CircleMembership, Message, Notification, Post, Comment, KarmaEvent };

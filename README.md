@@ -223,7 +223,7 @@ PostgreSQL (Neon)
 
 | Member | Role |
 |---|---|
-| Rehman Khan | Team Lead, Backend |
+| Rehman Khan | Team Lead, Backend, Frontend |
 | Alisha Karim | Frontend, UI Development |
 | Xavier Perez | Backend, Database Development |
 | Randy Dean | Backend |

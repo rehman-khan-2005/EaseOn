@@ -10,7 +10,7 @@ import { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signO
 const T = {
   bg: "#0e1117", surface: "#161b22", card: "#1c2129", raised: "#242b35",
   accent: "#3fb8a0", accentGlow: "rgba(63,184,160,0.15)",
-  text: "#f0f2f5", textSec: "#8b949e", textDim: "#484f58",
+  text: "#f0f2f5", textSec: "#8b949e", textDim: "#6e7681",
   border: "#21262d", danger: "#f85149", gold: "#f1c40f", silver: "#bdc3c7", bronze: "#cd7f32",
 };
 

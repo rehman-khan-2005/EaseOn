@@ -546,7 +546,17 @@ export default function EaseOn(){
       )}
       <div style={{display:"flex",gap:18}}>
         <button style={S.icoBtn} onClick={()=>toggleLike(p.id)}><Ic.Like on={liked.has(p.id)}/><span style={{marginLeft:5,color:liked.has(p.id)?T.accent:T.textSec,fontSize:12}}>{p.likes}</span></button>
-        <button style={S.icoBtn} onClick={()=>setViewingComments(viewingComments===p.id?null:p.id)}><Ic.Chat/><span style={{marginLeft:5,color:T.textSec,fontSize:12}}>{p.comments?.length||0}</span></button>
+       <button
+  style={{...S.icoBtn, transition:"opacity 0.2s"}}
+  onClick={()=>setViewingComments(viewingComments===p.id?null:p.id)}
+  onMouseOver={e=>e.currentTarget.style.opacity=0.8}
+  onMouseOut={e=>e.currentTarget.style.opacity=1}
+>
+  <Ic.Chat/>
+  <span style={{marginLeft:5,color:T.textSec,fontSize:12}}>
+    {p.comments?.length||0}
+  </span>
+</button>
       </div>
       {viewingComments===p.id&&(
        <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${T.border}`}}>

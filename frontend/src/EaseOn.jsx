@@ -553,7 +553,7 @@ export default function EaseOn(){
           {(p.comments||[]).map((c,i)=>(
             <div key={i} style={{display:"flex",gap:8,marginBottom:8}}>
               <span style={{fontSize:16}}>{c.avatar}</span>
-              <div><span style={{color:T.accent,fontSize:12,fontWeight:600}}>@{c.user}</span><span style={{color:T.textDim,fontSize:10,marginLeft:6}}>{timeAgo(new Date(c.ts||Date.now()))}</span><p style={{color:T.text,fontSize:12,margin:"2px 0 0",lineHeight:1.4}}>{c.text}</p></div>
+              <div><span style={{color:T.accent,fontSize:12,fontWeight:600}}>@{c.user}</span><span style={{color:T.textDim,fontSize:10,marginLeft:6}}>{timeAgo(new Date(c.ts||Date.now()))}</span><p style={{color:T.text,fontSize:12.5,margin:"2px 0 0",lineHeight:1.5}}>{c.text}</p></div>
             </div>
           ))}
           <div style={{display:"flex",gap:8,marginTop:8}}>

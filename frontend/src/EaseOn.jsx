@@ -10,7 +10,7 @@ import { auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signO
 const T = {
   bg: "#0e1117", surface: "#161b22", card: "#1c2129", raised: "#242b35",
   accent: "#3fb8a0", accentGlow: "rgba(63,184,160,0.15)",
-  text: "#f0f2f5", textSec: "#8b949e", textDim: "#484f58",
+  text: "#f0f2f5", textSec: "#8b949e", textDim: "#6e7681",
   border: "#21262d", danger: "#f85149", gold: "#f1c40f", silver: "#bdc3c7", bronze: "#cd7f32",
 };
 
@@ -522,7 +522,7 @@ export default function EaseOn(){
     const doComment=()=>{if(!localComment.trim())return;const isOwnPost=isMyPost(p);setPosts(pp=>pp.map(x=>x.id===p.id?{...x,comments:[...x.comments,{user:user.username,avatar:user.avatar,text:localComment,ts:Date.now()}]}:x));api.addComment(p.id,localComment).catch(()=>{});setLocalComment("")};
     const saveEdit=()=>{if(!editText.trim())return;setPosts(pp=>pp.map(x=>x.id===p.id?{...x,text:editText,editedAt:Date.now()}:x));api.updatePost?.(p.id,{text:editText}).catch(()=>{});setEditing(false)};
     return(
-    <div style={{...S.card,marginBottom:12,padding:"14px 16px"}}>
+    <div style={{...S.card,marginBottom:12,padding:"16px 18px"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
         <div style={{...S.avatarSm,cursor:"pointer"}} onClick={()=>{const u=allUsers.find(x=>x.id===p.userId);if(u){setViewingProfile(u);nav("userProfile")}}}>{p.avatar}</div>
         <div style={{flex:1,minWidth:0}}>
@@ -546,14 +546,24 @@ export default function EaseOn(){
       )}
       <div style={{display:"flex",gap:18}}>
         <button style={S.icoBtn} onClick={()=>toggleLike(p.id)}><Ic.Like on={liked.has(p.id)}/><span style={{marginLeft:5,color:liked.has(p.id)?T.accent:T.textSec,fontSize:12}}>{p.likes}</span></button>
-        <button style={S.icoBtn} onClick={()=>setViewingComments(viewingComments===p.id?null:p.id)}><Ic.Chat/><span style={{marginLeft:5,color:T.textSec,fontSize:12}}>{p.comments?.length||0}</span></button>
+       <button
+  style={{...S.icoBtn, transition:"opacity 0.2s"}}
+  onClick={()=>setViewingComments(viewingComments===p.id?null:p.id)}
+  onMouseOver={e=>e.currentTarget.style.opacity=0.8}
+  onMouseOut={e=>e.currentTarget.style.opacity=1}
+>
+  <Ic.Chat/>
+  <span style={{marginLeft:5,color:T.textSec,fontSize:12}}>
+    {p.comments?.length||0}
+  </span>
+</button>
       </div>
       {viewingComments===p.id&&(
-        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+       <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
           {(p.comments||[]).map((c,i)=>(
             <div key={i} style={{display:"flex",gap:8,marginBottom:8}}>
               <span style={{fontSize:16}}>{c.avatar}</span>
-              <div><span style={{color:T.accent,fontSize:12,fontWeight:600}}>@{c.user}</span><span style={{color:T.textDim,fontSize:10,marginLeft:6}}>{timeAgo(new Date(c.ts||Date.now()))}</span><p style={{color:T.text,fontSize:12,margin:"2px 0 0",lineHeight:1.4}}>{c.text}</p></div>
+              <div><span style={{color:T.accent,fontSize:12,fontWeight:600}}>@{c.user}</span><span style={{color:T.textDim,fontSize:10,marginLeft:6}}>{timeAgo(new Date(c.ts||Date.now()))}</span><p style={{color:T.text,fontSize:12.5,margin:"2px 0 0",lineHeight:1.5}}>{c.text}</p></div>
             </div>
           ))}
           <div style={{display:"flex",gap:8,marginTop:8}}>

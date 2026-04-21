@@ -549,7 +549,7 @@ export default function EaseOn(){
         <button style={S.icoBtn} onClick={()=>setViewingComments(viewingComments===p.id?null:p.id)}><Ic.Chat/><span style={{marginLeft:5,color:T.textSec,fontSize:12}}>{p.comments?.length||0}</span></button>
       </div>
       {viewingComments===p.id&&(
-        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+       <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${T.border}`}}>
           {(p.comments||[]).map((c,i)=>(
             <div key={i} style={{display:"flex",gap:8,marginBottom:8}}>
               <span style={{fontSize:16}}>{c.avatar}</span>

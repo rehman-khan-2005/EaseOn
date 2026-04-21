@@ -522,7 +522,7 @@ export default function EaseOn(){
     const doComment=()=>{if(!localComment.trim())return;const isOwnPost=isMyPost(p);setPosts(pp=>pp.map(x=>x.id===p.id?{...x,comments:[...x.comments,{user:user.username,avatar:user.avatar,text:localComment,ts:Date.now()}]}:x));api.addComment(p.id,localComment).catch(()=>{});setLocalComment("")};
     const saveEdit=()=>{if(!editText.trim())return;setPosts(pp=>pp.map(x=>x.id===p.id?{...x,text:editText,editedAt:Date.now()}:x));api.updatePost?.(p.id,{text:editText}).catch(()=>{});setEditing(false)};
     return(
-    <div style={{...S.card,marginBottom:12,padding:"14px 16px"}}>
+    <div style={{...S.card,marginBottom:12,padding:"16px 18px"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
         <div style={{...S.avatarSm,cursor:"pointer"}} onClick={()=>{const u=allUsers.find(x=>x.id===p.userId);if(u){setViewingProfile(u);nav("userProfile")}}}>{p.avatar}</div>
         <div style={{flex:1,minWidth:0}}>

@@ -96,7 +96,20 @@ module.exports = {
     });
     await queryInterface.addIndex("notifications", ["user_id", "is_read"]);
 
-
+     // 8. POSTS
+    await queryInterface.createTable("posts", {
+      id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true },
+      user_id: { type: Sequelize.UUID, allowNull: false, references: { model: "users", key: "id" }, onDelete: "CASCADE" },
+      circle_tag: { type: Sequelize.STRING(100), allowNull: false, defaultValue: "#General" },
+      text: { type: Sequelize.TEXT, allowNull: false },
+      mood_value: { type: Sequelize.INTEGER, allowNull: true },
+      visibility: { type: Sequelize.STRING(20), allowNull: false, defaultValue: "public" },
+      likes: { type: Sequelize.INTEGER, allowNull: false, defaultValue: 0 },
+      created_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal("CURRENT_TIMESTAMP") },
+      updated_at: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal("CURRENT_TIMESTAMP") },
+    });
+    await queryInterface.addIndex("posts", ["user_id"]);
+    await queryInterface.addIndex("posts", ["circle_tag"]);
     
    
 

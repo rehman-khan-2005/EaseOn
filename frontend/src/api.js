@@ -75,7 +75,8 @@ const api = {
   getConversation: (userId) => request(`/messages/direct/${userId}`),
   sendDM: (recipientId, content) => request("/messages/direct", { method: "POST", body: JSON.stringify({ recipient_id: recipientId, content }) }),
   markRead: (senderId) => request(`/messages/read/${senderId}`, { method: "PUT" }),
-  sendCircleMessage: (circleId, content) => request(`/messages/circle/${circleId}`, { method: "POST", body: JSON.stringify({ content }) }),
+  getCircleMessages: (circleId) => request(`/circles/${circleId}/messages`),
+  sendCircleMessage: (circleId, content) => request(`/circles/${circleId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
 
   // Notifications
   getNotifications: () => request("/notifications"),

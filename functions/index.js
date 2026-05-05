@@ -15,6 +15,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", routes);
+app.use("/api/circles", require("./routes/circleMessages"));
 
 app.get("/", (req, res) => {
   res.json({ name: "Ease-On API", version: "1.0.0", status: "running" });
@@ -23,3 +24,4 @@ app.get("/", (req, res) => {
 app.use(errorHandler);
 
 exports.api = functions.https.onRequest(app);
+// Mon Apr 27 15:21:33 EDT 2026

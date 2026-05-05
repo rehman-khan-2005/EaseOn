@@ -410,7 +410,103 @@ export default function EaseOn(){
     }catch(e){console.log("Load conversation error:",e)}
   };
 
-  const sendGroupMsg=()=>{if(!groupInput.trim())return;setGroupMsgs(p=>[...p,{from:"me",text:groupInput,time:fmtTime(new Date())}]);if(selCircle)api.sendCircleMessage(selCircle.id,groupInput).catch(()=>{});setGroupInput("")};
+  const sendGroupMsg=()=>{
+    if(!groupInput.trim()||!selCircle)return;
+    const nowTs=Date.now();
+    setGroupMsgs(p=>[...p,{from:"me",text:groupInput,ts:nowTs,time:fmtTime(new Date())}]);
+    api.sendCircleMessage(selCircle.id,groupInput).catch(()=>{});
+    setGroupInput("");
+  };
+
+  // Load circle group chat messages
+  const loadCircleMessages=async(circleId)=>{
+    if(!circleId)return;
+    try{
+      const res=await api.getCircleMessages?.(circleId);
+      if(!res){console.log("Circle messages: no response");return}
+      const msgs=res?.messages||res?.data||(Array.isArray(res)?res:[]);
+      if(!Array.isArray(msgs)){console.log("Circle messages not array:",res);return}
+      const mapped=msgs.map(m=>{const mts=m.sent_at||m.created_at||m.createdAt;const parsed=mts?new Date(mts).getTime():Date.now();return{from:m.sender_id===user.id||m.from_me?"me":m.sender_id||"unknown",senderName:m.sender?.username||m.sender?.display_name||"Member",text:m.content||m.text||"",ts:isNaN(parsed)?Date.now():parsed,time:fmtTime(new Date(isNaN(parsed)?Date.now():parsed))}}).sort((a,b)=>a.ts-b.ts);
+      setGroupMsgs(mapped);
+    }catch(e){console.log("Circle messages load error:",e)}
+  };
+
+  // ─── REAL-TIME POLLING ──────────────────────────────────────────
+  // 1. Active 1-on-1 chat — refresh every 3s (and immediately on enter)
+  useEffect(()=>{
+    if(screen!=="chat"||!activeChat)return;
+    loadConversation(activeChat);
+    const t=setInterval(()=>loadConversation(activeChat),3000);
+    return()=>clearInterval(t);
+  },[screen,activeChat]);
+
+  // 2. Circle group chat — refresh every 3s (and immediately on enter)
+  useEffect(()=>{
+    if(screen!=="groupChat"||!selCircle?.id)return;
+    loadCircleMessages(selCircle.id);
+    const t=setInterval(()=>loadCircleMessages(selCircle.id),3000);
+    return()=>clearInterval(t);
+  },[screen,selCircle?.id]);
+
+  // 3. Posts feed — refresh every 6s on home/explore/circle (immediate + interval)
+  useEffect(()=>{
+    if(!user.id)return;
+    if(!["home","explore","circle"].includes(screen))return;
+    const fetchPosts=()=>{
+      api.getPosts().then(res=>{
+        const list=Array.isArray(res)?res:(res?.posts||[]);
+        if(!Array.isArray(list)){console.log("Posts not array:",res);return}
+        setPosts(list.map(p=>{const cts=p.created_at||p.createdAt;const parsed=cts?new Date(cts).getTime():Date.now();return{id:p.id,userId:p.user_id,username:p.user?.username||p.username||"user",avatar:p.user?.avatar_url||"😊",circle:p.circle_tag||"#General",text:p.text||p.body||"",mood:p.mood_value||3,ts:isNaN(parsed)?Date.now():parsed,likes:p.like_count||0,comments:(p.comments||[]).map(c=>({user:c.user?.username||"user",avatar:c.user?.avatar_url||"😊",text:c.text,ts:c.created_at?new Date(c.created_at).getTime():Date.now()}))}}));
+      }).catch(e=>console.log("Posts fetch error:",e));
+    };
+    fetchPosts();
+    const t=setInterval(fetchPosts,6000);
+    return()=>clearInterval(t);
+  },[screen,user.id]);
+
+  // 4. Inbox (DM list) — refresh every 5s globally so unread dot updates everywhere
+  useEffect(()=>{
+    if(!user.id)return;
+    const fetchInbox=()=>{
+      api.getInbox().then(inbox=>{
+        if(!Array.isArray(inbox)){console.log("Inbox not array:",inbox);return}
+        // On msgList screen, also pull each conversation's messages
+        if(screen==="msgList"){
+          inbox.forEach(c=>{
+            const uid=c.other_user_id||c.userId;
+            if(uid)loadConversation(uid);
+          });
+        }
+        setConvos(p=>{
+          const merged=[...p];
+          inbox.forEach(c=>{
+            const uid=c.other_user_id||c.userId;
+            if(!uid)return;
+            const idx=merged.findIndex(x=>x.userId===uid);
+            if(idx===-1)merged.push({userId:uid,unread:c.unread_count>0,msgs:[]});
+            else merged[idx]={...merged[idx],unread:c.unread_count>0};
+          });
+          return merged;
+        });
+      }).catch(e=>console.log("Inbox fetch error:",e));
+    };
+    fetchInbox();
+    const t=setInterval(fetchInbox,5000);
+    return()=>clearInterval(t);
+  },[screen,user.id]);
+
+  // 5. Notifications — refresh every 10s globally
+  useEffect(()=>{
+    if(!user.id)return;
+    const t=setInterval(()=>{
+      api.getNotifications().then(res=>{
+        const ns=Array.isArray(res)?res:(res?.notifications||res?.data||[]);
+        if(!Array.isArray(ns)){console.log("Notifs not array:",res);return}
+        setNotifs(ns.map(n=>{const nts=n.created_at||n.createdAt;const parsed=nts?new Date(nts).getTime():Date.now();return{id:n.id,text:n.content,read:n.is_read,ts:isNaN(parsed)?Date.now():parsed}}));
+      }).catch(e=>console.log("Notifs fetch error:",e));
+    },10000);
+    return()=>clearInterval(t);
+  },[user.id]);
   const createCircle=()=>{if(!newCircleName.trim())return;const nc={id:"c"+Date.now(),name:newCircleName,tag:"#"+newCircleName.replace(/\s/g,""),members:1,desc:newCircleDesc||"A new circle.",vis:"public"};setCircles(p=>[...p,nc]);setJoined(p=>[...p,nc.id]);api.createCircle({name:newCircleName,description:newCircleDesc}).then(d=>{if(d?.circle?.id){setCircles(p=>p.map(c=>c.id===nc.id?{...c,id:d.circle.id}:c));setJoined(p=>p.map(id=>id===nc.id?d.circle.id:id))}}).catch(()=>{});setNewCircleName("");setNewCircleDesc("");setShowCreateCircle(false)};
   const saveSettings=()=>{setUser(p=>({...p,name:settingsName,username:settingsUser,phone:settingsPhone,anonymous:settingsAnon}));api.updateMe({display_name:settingsName,username:settingsUser,phone:settingsPhone,is_anonymous:settingsAnon}).catch(()=>{});goBack()};
 
@@ -639,6 +735,8 @@ export default function EaseOn(){
       const now=new Date();
       const week=Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(now.getDate()-now.getDay()+i);return{n:dayNames[i],d:d.getDate(),today:d.toDateString()===now.toDateString()}});
       const alreadyLogged=moodLoggedDate===todayStr();
+      // New user check — no posts, no journals, no moods, no circles
+      const isNewUser=posts.length===0&&journals.length===0&&moodLog.length===0&&joined.length===0;
       return(<>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
           <h1 style={{fontSize:26,fontWeight:700,color:T.text,margin:0,fontFamily:"'Outfit',sans-serif"}}>Hi, {displayName()}</h1>
@@ -658,7 +756,20 @@ export default function EaseOn(){
           <button style={{...S.icoBtn,padding:2}} onClick={()=>{setShowNotifBanner(false);setNotifBannerDismissed(true)}}><Ic.X/></button>
         </div>}
 
-        {(!loggedToday||!journaledToday)&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}33`,background:`${T.accent}08`}}>
+        {/* New-user welcome — only shows for brand new accounts */}
+        {isNewUser&&<div style={{...S.card,marginBottom:14,padding:18,textAlign:"center",border:`1px solid ${T.accent}44`,background:`${T.accent}08`}}>
+          <div style={{fontSize:36,marginBottom:8}}>🌿</div>
+          <div style={{color:T.text,fontWeight:700,fontSize:16,marginBottom:6}}>Welcome to Ease-On!</div>
+          <div style={{color:T.textSec,fontSize:13,lineHeight:1.5,marginBottom:14}}>This is your community wellness companion. Get started by:</div>
+          <div style={{textAlign:"left",display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+            <div style={{color:T.text,fontSize:12,display:"flex",gap:8}}><span>1.</span><span>Logging your mood below</span></div>
+            <div style={{color:T.text,fontSize:12,display:"flex",gap:8}}><span>2.</span><span>Writing your first journal entry</span></div>
+            <div style={{color:T.text,fontSize:12,display:"flex",gap:8}}><span>3.</span><span>Joining a support circle on the Explore tab</span></div>
+            <div style={{color:T.text,fontSize:12,display:"flex",gap:8}}><span>4.</span><span>Sharing your first post when you're ready</span></div>
+          </div>
+        </div>}
+
+        {(!loggedToday||!journaledToday)&&!isNewUser&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}33`,background:`${T.accent}08`}}>
           <div style={{color:T.text,fontWeight:600,fontSize:13,marginBottom:8}}>✨ Today's Check-in</div>
           <div style={{display:"flex",gap:8,flexDirection:"column"}}>
             {!loggedToday&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSec}}><span>○</span><span>Log your mood</span></div>}
@@ -668,51 +779,46 @@ export default function EaseOn(){
           </div>
         </div>}
 
-        {happyMemory&&<div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}44`,background:`${T.accent}11`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{color:T.accent,fontWeight:600,fontSize:13}}>💛 Remember this day?</span><button style={S.icoBtn} onClick={()=>setHappyMemory(null)}><Ic.X/></button></div>
-          <p style={{color:T.text,fontSize:12,margin:0}}>On {fmtDate(happyMemory.date)}, you logged <strong>{MOODS.find(m=>m.value===happyMemory.value)?.label}</strong> {MOODS.find(m=>m.value===happyMemory.value)?.emoji}. Better days are always ahead.</p>
-        </div>}
+        {happyMemory&&(()=>{
+          const happyDateStr=new Date(happyMemory.date).toDateString();
+          const happyJournal=journals.find(j=>{const d=j.date instanceof Date?j.date:new Date(j.date);return d.toDateString()===happyDateStr});
+          return(
+          <div style={{...S.card,marginBottom:14,padding:14,border:`1px solid ${T.accent}44`,background:`${T.accent}11`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{color:T.accent,fontWeight:600,fontSize:13}}>💛 Remember this day?</span><button style={S.icoBtn} onClick={()=>setHappyMemory(null)}><Ic.X/></button></div>
+            <p style={{color:T.text,fontSize:12,margin:"0 0 8px"}}>On {fmtDate(happyMemory.date)}, you logged <strong>{MOODS.find(m=>m.value===happyMemory.value)?.label}</strong> {MOODS.find(m=>m.value===happyMemory.value)?.emoji}. Better days are always ahead.</p>
+            {happyJournal&&<div style={{padding:"10px 12px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,marginTop:8}}>
+              <div style={{color:T.textSec,fontSize:10,fontWeight:600,marginBottom:4}}>YOUR JOURNAL FROM THAT DAY</div>
+              <p style={{color:T.text,fontSize:12,margin:0,lineHeight:1.5,fontStyle:"italic"}}>"{happyJournal.text.length>180?happyJournal.text.substring(0,180)+"...":happyJournal.text}"</p>
+            </div>}
+          </div>
+          );
+        })()}
 
-        <div style={{...S.card,padding:"16px 16px 18px"}}>
-          <p style={{color:T.text,fontWeight:600,fontSize:15,margin:"0 0 12px"}}>Today's Mood</p>
+        {/* Quick mood logger — compact version */}
+        {!alreadyLogged&&<div style={{...S.card,padding:"14px 16px 16px",marginBottom:14}}>
+          <p style={{color:T.text,fontWeight:600,fontSize:14,margin:"0 0 10px"}}>How are you feeling today?</p>
           <MoodRow selected={todayMood} onSelect={logMood} disabled={alreadyLogged}/>
-          {alreadyLogged&&<p style={{color:T.accent,fontSize:12,textAlign:"center",marginTop:10,marginBottom:0,fontWeight:500}}>Mood logged for today ✓</p>}
-          {avgTodayMood&&<div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${T.border}`,textAlign:"center"}}>
-            <div style={{color:T.textSec,fontSize:11,fontWeight:600,marginBottom:6}}>OVERALL MOOD (Journal + Posts + Mood Log)</div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-              <span style={{fontSize:28}}>{MOODS.find(m=>m.value===avgTodayMood)?.emoji}</span>
-              <span style={{color:T.text,fontSize:14,fontWeight:600}}>{MOODS.find(m=>m.value===avgTodayMood)?.label}</span>
-            </div>
-          </div>}
-        </div>
-        <button style={S.btnFull} onClick={()=>{setEditJ(null);setJText("");setJMood(null);setJVis("private");nav("jEntry")}}>Create Reflection</button>
-        <div style={{...S.card,marginTop:14,display:"flex",alignItems:"center",gap:14,padding:"14px 16px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:80}}><div style={{fontSize:34,fontWeight:900,color:T.accent,fontFamily:"'Outfit',sans-serif",lineHeight:1}}>{streak}</div><div><div style={{fontSize:11,fontWeight:600,color:T.textSec}}>Day Streak</div><div style={{fontSize:10,color:T.accent,fontWeight:500}}>Keep it up!</div></div></div>
-          <div style={{flex:1,display:"flex",justifyContent:"space-around"}}>{week.map((d,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:10,color:T.textSec,fontWeight:600,marginBottom:4}}>{d.n}</div><div style={{width:26,height:26,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:d.today?T.accent:"transparent",color:d.today?"#fff":T.textDim}}>{d.d}</div></div>)}</div>
-        </div>
+        </div>}
 
-        {allUsers.length>0&&<div style={{marginTop:22}}>
+        {/* MAIN: Community feed — posts from circles you've joined or all if none joined */}
+        <div style={{marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <p style={{color:T.text,fontWeight:600,fontSize:15,margin:0,display:"flex",alignItems:"center",gap:6}}><Ic.Trophy/> Top Contributors</p>
-            <span style={{color:T.accent,fontSize:13,cursor:"pointer",fontWeight:500}} onClick={()=>nav("topContributors")}>View all</span>
+            <p style={{color:T.text,fontWeight:600,fontSize:15,margin:0}}>Community Feed</p>
+            <span style={{color:T.accent,fontSize:13,cursor:"pointer",fontWeight:500}} onClick={()=>tabNav("explore")}>Explore</span>
           </div>
-          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
-            {getSortedContributors().slice(0,4).map((u,i)=>(
-              <div key={u.id} onClick={()=>{setViewingProfile(u);nav("userProfile")}} style={{...S.card,minWidth:100,padding:"12px 10px",textAlign:"center",cursor:"pointer",position:"relative",flex:"0 0 auto"}}>
-                {i<3&&<div style={{position:"absolute",top:6,right:8,fontSize:12}}>{["🥇","🥈","🥉"][i]}</div>}
-                <div style={{fontSize:28,marginBottom:4}}>{u.avatar}</div>
-                <div style={{color:T.text,fontWeight:600,fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name}</div>
-                <div style={{color:T.accent,fontWeight:800,fontSize:13,marginTop:2,fontFamily:"'Outfit',sans-serif"}}>#{i+1}</div>
-              </div>
-            ))}
-          </div>
-        </div>}
+          {(()=>{
+            // Show posts from circles you've joined first; if none joined, show all
+            const joinedTags=circles.filter(c=>joined.includes(c.id)).map(c=>c.tag.toLowerCase());
+            const feedPosts=joinedTags.length>0?posts.filter(p=>joinedTags.includes((p.circle||"").toLowerCase())):posts;
+            if(feedPosts.length===0)return(<div style={{...S.card,padding:24,textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:8}}>📭</div>
+              <div style={{color:T.text,fontSize:13,fontWeight:600,marginBottom:4}}>{joinedTags.length===0?"Your feed is empty":"No posts in your circles yet"}</div>
+              <div style={{color:T.textSec,fontSize:12}}>{joinedTags.length===0?"Join a circle on the Explore tab to see posts":"Be the first to share something!"}</div>
+            </div>);
+            return feedPosts.slice(0,15).map(p=><PostCard key={p.id} p={p}/>);
+          })()}
+        </div>
 
-        {circles.filter(c=>joined.includes(c.id)).length>0&&<div style={{marginTop:22}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><p style={{color:T.text,fontWeight:600,fontSize:15,margin:0}}>Your Circles</p><span style={{color:T.accent,fontSize:13,cursor:"pointer"}} onClick={()=>tabNav("explore")}>View all</span></div>
-          {circles.filter(c=>joined.includes(c.id)).slice(0,2).map(c=><div key={c.id} onClick={()=>{setSelCircle(c);nav("circleDetail")}} style={{...S.card,marginBottom:8,display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer"}}><div style={{width:40,height:40,borderRadius:20,background:T.accentGlow,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic.Users/></div><div><div style={{color:T.text,fontWeight:600,fontSize:14}}>{c.tag}</div><div style={{color:T.textSec,fontSize:11}}>{c.members} Members</div></div></div>)}
-        </div>}
-        {posts.length>0&&<div style={{marginTop:22}}><p style={{color:T.text,fontWeight:600,fontSize:15,margin:"0 0 10px"}}>Recent Activity</p>{posts.slice(0,3).map(p=><PostCard key={p.id} p={p}/>)}</div>}
         <button style={S.fab} onClick={()=>nav("createPost")}><Ic.Plus/></button>
       </>);
     }
@@ -880,7 +986,7 @@ export default function EaseOn(){
         <p style={{color:T.textDim,fontSize:13,marginBottom:14}}>{selCircle.desc}</p>
         <div style={{display:"flex",gap:8,marginBottom:20}}>
           <Pill active={!m} onClick={()=>{if(m){setJoined(p=>p.filter(id=>id!==selCircle.id));api.leaveCircle(selCircle.id).catch(()=>{})}else{setJoined(p=>[...p,selCircle.id]);api.joinCircle(selCircle.id).catch(()=>{})}}}>{m?"Leave Circle":"Join Circle"}</Pill>
-          {m&&<Pill onClick={()=>nav("groupChat")}>Group Chat</Pill>}
+          {m&&<Pill onClick={()=>{nav("groupChat");if(selCircle?.id)loadCircleMessages(selCircle.id)}}>Group Chat</Pill>}
           {m&&<Pill onClick={()=>{setNewPostCircles([selCircle.tag]);setNewCircleInput("");setNewPostText("");setNewPostMood(null);nav("createPost")}} s={{background:T.accent,color:"#fff"}}>+ Post</Pill>}
         </div>
         <p style={{color:T.text,fontWeight:600,fontSize:15,marginBottom:10}}>Circle Feed</p>
@@ -981,11 +1087,51 @@ export default function EaseOn(){
         {pTab==="insights"&&(<>
           <p style={{color:T.text,fontWeight:600,fontSize:15,marginBottom:10}}>Your Insights</p>
           <div style={{display:"flex",gap:8,marginBottom:22}}><StatCard value={daysActive} label="Days Active"/><StatCard value={myPostCount} label="Posts Created"/><StatCard value={joined.length} label="Circles Joined"/></div>
+
+          {/* Today's mood summary — moved from home */}
+          {avgTodayMood&&<div style={{...S.card,padding:"14px 16px",marginBottom:14,textAlign:"center"}}>
+            <div style={{color:T.textSec,fontSize:11,fontWeight:600,marginBottom:6}}>TODAY'S OVERALL MOOD</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+              <span style={{fontSize:28}}>{MOODS.find(m=>m.value===avgTodayMood)?.emoji}</span>
+              <span style={{color:T.text,fontSize:14,fontWeight:600}}>{MOODS.find(m=>m.value===avgTodayMood)?.label}</span>
+            </div>
+            <div style={{color:T.textDim,fontSize:10,marginTop:4}}>Average across mood log, journal, and posts</div>
+          </div>}
+
+          {/* Streak + week — moved from home */}
+          <div style={{...S.card,marginBottom:14,display:"flex",alignItems:"center",gap:14,padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,minWidth:80}}><div style={{fontSize:34,fontWeight:900,color:T.accent,fontFamily:"'Outfit',sans-serif",lineHeight:1}}>{streak}</div><div><div style={{fontSize:11,fontWeight:600,color:T.textSec}}>Day Streak</div><div style={{fontSize:10,color:T.accent,fontWeight:500}}>Keep it up!</div></div></div>
+            <div style={{flex:1,display:"flex",justifyContent:"space-around"}}>{(()=>{const now=new Date();return Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(now.getDate()-now.getDay()+i);return{n:dayNames[i],d:d.getDate(),today:d.toDateString()===now.toDateString()}})})().map((d,i)=><div key={i} style={{textAlign:"center"}}><div style={{fontSize:10,color:T.textSec,fontWeight:600,marginBottom:4}}>{d.n}</div><div style={{width:26,height:26,borderRadius:13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:d.today?T.accent:"transparent",color:d.today?"#fff":T.textDim}}>{d.d}</div></div>)}</div>
+          </div>
+
           <p style={{color:T.text,fontWeight:600,fontSize:15,marginBottom:10}}>Your Moods This Month</p>
           <div style={{...S.card,padding:16}}><p style={{color:T.textSec,fontSize:13,margin:"0 0 12px",textAlign:"center",fontWeight:600}}>{mo}</p><div style={{display:"flex",justifyContent:"space-around"}}>{MOODS.map(m=><div key={m.value} style={{textAlign:"center"}}><span style={{fontSize:26}}>{m.emoji}</span><div style={{color:T.textSec,fontSize:13,marginTop:4,fontWeight:600}}>{moodCounts[m.value]||0}</div></div>)}</div></div>
           <button style={{...S.btnOutline,marginTop:14}} onClick={()=>nav("moodGraph")}>View Mood Graph</button>
           <button style={{...S.btnOutline,marginTop:8}} onClick={()=>nav("reminders")}>Manage Reminders</button>
-          {posts.filter(p=>p.userId==="me").length>0&&<><p style={{color:T.text,fontWeight:600,fontSize:15,margin:"20px 0 10px"}}>Your Post History</p>{posts.filter(p=>p.userId==="me").slice(0,3).map(p=><PostCard key={p.id} p={p}/>)}</>}
+
+          {/* Top contributors — moved from home */}
+          {allUsers.length>0&&<div style={{marginTop:22}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <p style={{color:T.text,fontWeight:600,fontSize:15,margin:0,display:"flex",alignItems:"center",gap:6}}><Ic.Trophy/> Top Contributors</p>
+              <span style={{color:T.accent,fontSize:13,cursor:"pointer",fontWeight:500}} onClick={()=>nav("topContributors")}>View all</span>
+            </div>
+            <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
+              {getSortedContributors().slice(0,4).map((u,i)=>(
+                <div key={u.id} onClick={()=>{setViewingProfile(u);nav("userProfile")}} style={{...S.card,minWidth:100,padding:"12px 10px",textAlign:"center",cursor:"pointer",position:"relative",flex:"0 0 auto"}}>
+                  {i<3&&<div style={{position:"absolute",top:6,right:8,fontSize:12}}>{["🥇","🥈","🥉"][i]}</div>}
+                  <div style={{fontSize:28,marginBottom:4}}>{u.avatar}</div>
+                  <div style={{color:T.text,fontWeight:600,fontSize:12,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.name}</div>
+                  <div style={{color:T.accent,fontWeight:800,fontSize:13,marginTop:2,fontFamily:"'Outfit',sans-serif"}}>#{i+1}</div>
+                </div>
+              ))}
+            </div>
+          </div>}
+
+          {/* Your circles — moved from home */}
+          {circles.filter(c=>joined.includes(c.id)).length>0&&<div style={{marginTop:22}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><p style={{color:T.text,fontWeight:600,fontSize:15,margin:0}}>Your Circles</p><span style={{color:T.accent,fontSize:13,cursor:"pointer"}} onClick={()=>tabNav("explore")}>View all</span></div>
+            {circles.filter(c=>joined.includes(c.id)).slice(0,3).map(c=><div key={c.id} onClick={()=>{setSelCircle(c);nav("circleDetail")}} style={{...S.card,marginBottom:8,display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer"}}><div style={{width:40,height:40,borderRadius:20,background:T.accentGlow,display:"flex",alignItems:"center",justifyContent:"center"}}><Ic.Users/></div><div><div style={{color:T.text,fontWeight:600,fontSize:14}}>{c.tag}</div><div style={{color:T.textSec,fontSize:11}}>{c.members} Members</div></div></div>)}
+          </div>}
         </>)}
         {pTab==="posts"&&(myPostCount===0?<div style={{textAlign:"center",color:T.textDim,marginTop:40}}><p style={{fontSize:36}}>📝</p><p>No posts yet</p></div>:posts.filter(p=>isMyPost(p)).map(p=><PostCard key={p.id} p={p}/>))}
       </>);
@@ -1012,7 +1158,7 @@ export default function EaseOn(){
     if(screen==="groupChat"){
       return(<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 120px)"}}>
         <TopBar left={<button style={S.icoBtn} onClick={goBack}><Ic.Back/></button>} title={(selCircle?.name||"Group")+" Chat"}/>
-        <div style={{flex:1,overflowY:"auto",paddingBottom:8}}>{groupMsgs.map((m,i)=>{const u=allUsers.find(x=>x.id===m.from);return(<div key={i} style={{display:"flex",justifyContent:m.from==="me"?"flex-end":"flex-start",marginBottom:8}}><div style={{maxWidth:"78%",padding:"10px 14px",borderRadius:16,background:m.from==="me"?T.accent:T.card,borderBottomRightRadius:m.from==="me"?4:16,borderBottomLeftRadius:m.from==="me"?16:4}}>{m.from!=="me"&&<p style={{fontSize:10,color:T.accent,margin:"0 0 4px",fontWeight:600}}>{u?.name||"Member"}</p>}<p style={{color:m.from==="me"?"#fff":T.text,fontSize:13,margin:0,lineHeight:1.45}}>{m.text}</p><p style={{fontSize:10,color:m.from==="me"?"rgba(255,255,255,.55)":T.textDim,margin:"3px 0 0",textAlign:"right"}}>{m.time}</p></div></div>)})}<div ref={groupEndRef}/></div>
+        <div style={{flex:1,overflowY:"auto",paddingBottom:8}}>{groupMsgs.map((m,i)=>{const u=allUsers.find(x=>x.id===m.from);const name=m.senderName||u?.name||"Member";return(<div key={i} style={{display:"flex",justifyContent:m.from==="me"?"flex-end":"flex-start",marginBottom:8}}><div style={{maxWidth:"78%",padding:"10px 14px",borderRadius:16,background:m.from==="me"?T.accent:T.card,borderBottomRightRadius:m.from==="me"?4:16,borderBottomLeftRadius:m.from==="me"?16:4}}>{m.from!=="me"&&<p style={{fontSize:10,color:T.accent,margin:"0 0 4px",fontWeight:600}}>{name}</p>}<p style={{color:m.from==="me"?"#fff":T.text,fontSize:13,margin:0,lineHeight:1.45}}>{m.text}</p><p style={{fontSize:10,color:m.from==="me"?"rgba(255,255,255,.55)":T.textDim,margin:"3px 0 0",textAlign:"right"}}>{m.time}</p></div></div>)})}<div ref={groupEndRef}/></div>
         <div style={{display:"flex",gap:8,paddingTop:8,flexShrink:0}}><input style={{...S.input,flex:1,marginBottom:0}} placeholder="Message the group..." value={groupInput} onChange={e=>setGroupInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendGroupMsg()}/><button style={{...S.icoBtn,background:T.card,borderRadius:12,width:44,height:44,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={sendGroupMsg}><Ic.Send/></button></div>
       </div>);
     }

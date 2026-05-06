@@ -91,7 +91,6 @@ export default function EaseOn(){
   const[moodCounts,setMoodCounts]=useState({1:0,2:0,3:0,4:0,5:0});
   const calcStreak=()=>{let s=0;const dates=moodLog.map(m=>m.date.toDateString());const t=new Date();for(let i=0;i<60;i++){const d=new Date(t);d.setDate(t.getDate()-i);if(dates.includes(d.toDateString()))s++;else if(i>0)break;}return s};
 
-  // Journal — all from backend
   const[journals,setJournals]=useState([]);
   const[editJ,setEditJ]=useState(null);
   const[jText,setJText]=useState("");
@@ -109,6 +108,7 @@ export default function EaseOn(){
   // Posts — all from backend
   const[posts,setPosts]=useState([]);
   const[liked,setLiked]=useState(new Set());
+  const likedRef=useRef(new Set());
   const[newPostText,setNewPostText]=useState("");
   const[newPostCircles,setNewPostCircles]=useState([]);
   const[newCircleInput,setNewCircleInput]=useState("");
@@ -308,7 +308,7 @@ export default function EaseOn(){
       }
       if(postsRes.status==="fulfilled"){
         const ps=postsRes.value?.posts||postsRes.value||[];
-        if(Array.isArray(ps))setPosts(ps.map(p=>{const pts=p.created_at||p.createdAt;const parsed=pts?new Date(pts).getTime():Date.now();return{id:p.id,userId:p.user_id,username:p.user?.username||"user",avatar:p.user?.avatar_url||"😊",circle:p.circle_tag||"#General",text:p.text,mood:p.mood_value||3,ts:isNaN(parsed)?Date.now():parsed,likes:p.likes||0,comments:(p.comments||[]).map(c=>{const cts=c.created_at||c.createdAt;const cp=cts?new Date(cts).getTime():Date.now();return{user:c.user?.username||"user",avatar:c.user?.avatar_url||"😊",text:c.text,ts:isNaN(cp)?Date.now():cp}})}}));
+        if(Array.isArray(ps))setPosts(ps.map(p=>{const pts=p.created_at||p.createdAt;const parsed=pts?new Date(pts).getTime():Date.now();const serverLikes=p.likes||0;return{id:p.id,userId:p.user_id,username:p.user?.username||"user",avatar:p.user?.avatar_url||"😊",circle:p.circle_tag||"#General",text:p.text,mood:p.mood_value||3,ts:isNaN(parsed)?Date.now():parsed,likes:likedRef.current.has(p.id)?Math.max(serverLikes,1):serverLikes,comments:(p.comments||[]).map(c=>{const cts=c.created_at||c.createdAt;const cp=cts?new Date(cts).getTime():Date.now();return{user:c.user?.username||"user",avatar:c.user?.avatar_url||"😊",text:c.text,ts:isNaN(cp)?Date.now():cp}})}}));
       }
       if(notifsRes.status==="fulfilled"){
         const ns=notifsRes.value?.notifications||notifsRes.value||[];
@@ -393,7 +393,7 @@ export default function EaseOn(){
   // When someone likes your post — increase your karma by 1 (tracked locally; server is authoritative)
   const likeReceived=pid=>{const post=posts.find(x=>x.id===pid);if(post&&isMyPost(post)&&post.userId===user.id)setUser(p=>({...p,karma:p.karma+1}))};
 
-  const toggleLike=pid=>{const s=new Set(liked);if(s.has(pid)){s.delete(pid);setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes-1}:x));api.unlikePost(pid).catch(()=>{})}else{s.add(pid);setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes+1}:x));api.likePost(pid).catch(()=>{})}setLiked(s)};
+  const toggleLike=pid=>{if(likedRef.current.has(pid)){likedRef.current.delete(pid);setLiked(new Set(likedRef.current));setPosts(p=>p.map(x=>x.id===pid?{...x,likes:Math.max(0,x.likes-1)}:x));api.unlikePost(pid).catch(()=>{})}else{likedRef.current.add(pid);setLiked(new Set(likedRef.current));setPosts(p=>p.map(x=>x.id===pid?{...x,likes:x.likes+1}:x));api.likePost(pid).catch(()=>{})}};
 
   const sendMsg=()=>{if(!msgInput.trim()||!activeChat)return;const nowTs=Date.now();setConvos(p=>p.map(c=>c.userId===activeChat?{...c,unread:false,msgs:[...c.msgs,{from:"me",text:msgInput,ts:nowTs,time:fmtTime(new Date()),date:"Today"}]}:c));api.sendDM(activeChat,msgInput).catch(()=>{});setMsgInput("")};
   const startNewDm=uid=>{if(!convos.find(c=>c.userId===uid))setConvos(p=>[{userId:uid,unread:false,msgs:[]},...p]);setActiveChat(uid);setShowNewDm(false);setDmSearch("");nav("chat");loadConversation(uid)};
@@ -456,7 +456,7 @@ export default function EaseOn(){
       api.getPosts().then(res=>{
         const list=Array.isArray(res)?res:(res?.posts||[]);
         if(!Array.isArray(list)){console.log("Posts not array:",res);return}
-        setPosts(list.map(p=>{const cts=p.created_at||p.createdAt;const parsed=cts?new Date(cts).getTime():Date.now();return{id:p.id,userId:p.user_id,username:p.user?.username||p.username||"user",avatar:p.user?.avatar_url||"😊",circle:p.circle_tag||"#General",text:p.text||p.body||"",mood:p.mood_value||3,ts:isNaN(parsed)?Date.now():parsed,likes:p.like_count||0,comments:(p.comments||[]).map(c=>({user:c.user?.username||"user",avatar:c.user?.avatar_url||"😊",text:c.text,ts:c.created_at?new Date(c.created_at).getTime():Date.now()}))}}));
+        setPosts(prev=>list.map(p=>{const cts=p.created_at||p.createdAt;const parsed=cts?new Date(cts).getTime():Date.now();const existing=prev.find(x=>x.id===p.id);const likes=existing!=null?existing.likes:(p.likes||0);return{id:p.id,userId:p.user_id,username:p.user?.username||p.username||"user",avatar:p.user?.avatar_url||"😊",circle:p.circle_tag||"#General",text:p.text||p.body||"",mood:p.mood_value||3,ts:isNaN(parsed)?Date.now():parsed,likes,comments:(p.comments||[]).map(c=>({user:c.user?.username||"user",avatar:c.user?.avatar_url||"😊",text:c.text,ts:c.created_at?new Date(c.created_at).getTime():Date.now()}))}}));
       }).catch(e=>console.log("Posts fetch error:",e));
     };
     fetchPosts();
